@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+
+# React Native
+.metro-health-check*
+
+# Android
+android/app/build/
+android/.gradle/
+android/build/
+android/local.properties
+*.apk
+*.aab
+
+# iOS (not used in v1.0, kept for completeness)
+ios/Pods/
+ios/build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.*
+
+# Project spec (local reference only)
+scanner-app-spec.md
