@@ -26,13 +26,23 @@ export function defaultFileName(): string {
   return `${t('fileNameDefault')} ${date} ${time}`;
 }
 
+/** Lunghezza massima del nome base, lasciando spazio a suffisso ed estensione. */
+const MAX_FILE_NAME_LENGTH = 100;
+
 /**
  * Rende sicuro il nome scelto dall'utente: rimuove i caratteri non validi
- * (es. "/" creerebbe sottocartelle o farebbe fallire il salvataggio) e,
- * se il risultato è vuoto, ricade sul nome predefinito.
+ * (es. "/" creerebbe sottocartelle o farebbe fallire il salvataggio), i punti
+ * iniziali e finali (niente "..", niente file nascosti), limita la lunghezza e,
+ * se il risultato è vuoto, ricade sul nome predefinito. Insieme evitano che il
+ * nome faccia scrivere fuori dalla cartella prevista (path traversal).
  */
 export function sanitizeFileName(name: string): string {
-  const cleaned = name.replace(INVALID_FILE_NAME_CHARS, '_').trim();
+  const cleaned = name
+    .replace(INVALID_FILE_NAME_CHARS, '_')
+    .replace(/^[\s.]+/, '')
+    .replace(/[\s.]+$/, '')
+    .slice(0, MAX_FILE_NAME_LENGTH)
+    .trim();
   return cleaned.length > 0 ? cleaned : defaultFileName();
 }
 
@@ -105,13 +115,26 @@ export async function copyToCache(
   uri: string,
   fileName: string,
 ): Promise<string> {
-  const cachePath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${fileName}`;
+  const cachePath = `${ReactNativeBlobUtil.fs.dirs.CacheDir}/${sanitizeFileName(
+    fileName,
+  )}`;
   await ReactNativeBlobUtil.fs.cp(toNativePath(uri), cachePath);
   return cachePath;
 }
 
+/**
+ * Elimina i file temporanei (scansioni ML Kit e copie per la condivisione).
+ * Agisce solo dentro la cache privata dell'app: un percorso altrove, o un URI
+ * `content://`, viene ignorato, così un file salvato dall'utente non può mai
+ * essere cancellato per errore.
+ */
 export async function cleanTempFiles(paths: string[]): Promise<void> {
-  for (const p of paths) {
+  const cacheDir = ReactNativeBlobUtil.fs.dirs.CacheDir;
+  for (const uri of paths) {
+    const p = toNativePath(uri);
+    if (!p.startsWith(`${cacheDir}/`) || p.includes('..')) {
+      continue;
+    }
     try {
       if (await ReactNativeBlobUtil.fs.exists(p)) {
         await ReactNativeBlobUtil.fs.unlink(p);

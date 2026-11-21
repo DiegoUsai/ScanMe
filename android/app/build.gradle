@@ -92,15 +92,27 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
+        // La chiave di rilascio non è mai nel repository: i valori arrivano da
+        // ~/.gradle/gradle.properties o da variabili d'ambiente (CI).
+        release {
+            def releaseStoreFile = findProperty('SCANME_UPLOAD_STORE_FILE') ?: System.getenv('SCANME_UPLOAD_STORE_FILE')
+            if (releaseStoreFile) {
+                storeFile file(releaseStoreFile)
+                storePassword findProperty('SCANME_UPLOAD_STORE_PASSWORD') ?: System.getenv('SCANME_UPLOAD_STORE_PASSWORD')
+                keyAlias findProperty('SCANME_UPLOAD_KEY_ALIAS') ?: System.getenv('SCANME_UPLOAD_KEY_ALIAS')
+                keyPassword findProperty('SCANME_UPLOAD_KEY_PASSWORD') ?: System.getenv('SCANME_UPLOAD_KEY_PASSWORD')
+            }
+        }
     }
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
         }
         release {
-            // Caution! In production, you need to generate your own keystore file.
-            // see https://reactnative.dev/docs/signed-apk-android.
-            signingConfig signingConfigs.debug
+            // Mai firmare la release con la debug.keystore pubblica: chiunque
+            // potrebbe firmare un aggiornamento malevolo con la stessa chiave.
+            // See https://reactnative.dev/docs/signed-apk-android.
+            signingConfig signingConfigs.release.storeFile ? signingConfigs.release : null
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
