@@ -56,6 +56,13 @@ export default function HomeScreen() {
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
         <Text style={styles.title}>{t('appName')}</Text>
+        <TouchableOpacity
+          onPress={() => navigation.navigate('Settings')}
+          accessibilityRole="button"
+          accessibilityLabel={t('settings')}
+          hitSlop={12}>
+          <Text style={styles.settingsIcon}>⚙</Text>
+        </TouchableOpacity>
       </View>
       <View style={styles.body}>
         <Text style={styles.emptyText}>{t('noScans')}</Text>
@@ -83,6 +90,9 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {flex: 1, backgroundColor: '#fff'},
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     paddingTop: 16,
     paddingHorizontal: 20,
     paddingBottom: 12,
@@ -90,6 +100,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e0e0e0',
   },
   title: {fontSize: 28, fontWeight: '700', color: '#1a1a1a'},
+  settingsIcon: {fontSize: 26, color: '#555'},
   body: {flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40},
   emptyText: {
     fontSize: 16,
