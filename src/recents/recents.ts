@@ -14,6 +14,8 @@ export interface RecentFile {
   savedAt: number;
   /** Dove è stato salvato, come lo mostra l'interfaccia. */
   destination: string;
+  /** Tutti i file del salvataggio (JPG su più pagine); assente = solo `uri`. */
+  uris?: string[];
   /** Progetto a cui appartiene, se scelto al salvataggio. */
   projectId?: string;
   /** Percorso della miniatura nella memoria privata dell'app. */
@@ -128,6 +130,13 @@ export async function addRecent(
   });
   await writeRecents(list);
   await Promise.all(dropped.map(deleteThumbnail));
+}
+
+/** Sostituisce una voce dell'elenco (es. dopo lo spostamento in un progetto). */
+export async function updateRecent(entry: RecentFile): Promise<RecentFile[]> {
+  const list = (await loadRecents()).map(r => (r.id === entry.id ? entry : r));
+  await writeRecents(list);
+  return list;
 }
 
 /** Toglie un file dall'elenco (il file salvato non viene toccato). */

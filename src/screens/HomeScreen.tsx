@@ -3,7 +3,6 @@ import {
   View,
   FlatList,
   Image,
-  ScrollView,
   Text,
   StyleSheet,
   TouchableOpacity,
@@ -14,9 +13,13 @@ import {
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import Share from 'react-native-share';
-import {loadRecents, removeRecent} from '../recents/recents';
+import {loadRecents, removeRecent, updateRecent} from '../recents/recents';
+import {moveRecent, needsMove, describeLocation} from '../recents/move';
+import ActionSheet from '../components/ActionSheet';
+import type {SheetOption} from '../components/ActionSheet';
+import type {Project} from '../settings/settings';
 import type {RecentFile} from '../recents/recents';
-import {fileExists, openFile} from '../native/StorageAccess';
+import {fileExists, openFile, StorageErrorCode} from '../native/StorageAccess';
 import {useSettings} from '../settings/SettingsContext';
 import {pickPdf, loadPdf, PdfErrorCode} from '../native/PdfEditor';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -99,38 +102,95 @@ export default function HomeScreen() {
     [navigation],
   );
 
+  const [sheet, setSheet] = useState<{
+    title: string;
+    subtitle?: string;
+    options: SheetOption[];
+  } | null>(null);
+  const [moving, setMoving] = useState(false);
+  const projectName = (item: RecentFile) =>
+    settings.projects.find(p => p.id === item.projectId)?.name;
+
+  /** Sposta il file nella posizione del progetto scelto: è il progetto che comanda. */
+  const moveTo = useCallback(
+    async (item: RecentFile, target: Project | undefined) => {
+      const from = settings.projects.find(p => p.id === item.projectId);
+      if (!needsMove(item, from, target, settings)) {
+        return;
+      }
+      setMoving(true);
+      try {
+        const {entry, originalRemoved} = await moveRecent(
+          item,
+          target,
+          settings,
+        );
+        setRecents(await updateRecent(entry));
+        if (!originalRemoved) {
+          Alert.alert(t('movedCopyOnly'), t('movedCopyOnlyHint'));
+        }
+      } catch (error: unknown) {
+        Alert.alert(
+          t('error'),
+          getErrorCode(error) === StorageErrorCode.PermissionDenied
+            ? t('folderAccessLost')
+            : t('moveError'),
+        );
+      } finally {
+        setMoving(false);
+      }
+    },
+    [settings],
+  );
+
+  const chooseProject = useCallback(
+    (item: RecentFile) => {
+      setSheet({
+        title: t('moveToProject'),
+        subtitle: t('moveToProjectHint'),
+        options: [undefined, ...settings.projects].map(p => ({
+          label: p ? p.name : t('noProject'),
+          detail: describeLocation(p, settings),
+          selected: (p?.id ?? undefined) === (item.projectId ?? undefined),
+          onPress: () => moveTo(item, p),
+        })),
+      });
+    },
+    [settings, moveTo],
+  );
+
   const handleMore = useCallback(
     (item: RecentFile) => {
-      // Android mostra al massimo tre pulsanti: niente "Annulla", si chiude
-      // toccando fuori dalla finestra.
+      const isMissing = missing.has(item.id);
       const isPdf = item.mimeType === 'application/pdf';
-      Alert.alert(
-        item.name,
-        item.destination,
-        [
-          ...(isPdf && !missing.has(item.id)
-            ? [{text: t('editPages'), onPress: () => openEditor(item.uri)}]
-            : [{text: t('cancel'), style: 'cancel' as const}]),
-          {
-            text: t('removeFromList'),
-            onPress: async () => setRecents(await removeRecent(item.id)),
-          },
-          ...(missing.has(item.id)
-            ? []
-            : [
-                {
-                  text: t('share'),
-                  onPress: () =>
-                    Share.open({url: item.uri, type: item.mimeType}).catch(
-                      () => undefined,
-                    ),
-                },
-              ]),
-        ],
-        {cancelable: true},
-      );
+      const options: SheetOption[] = [];
+      if (!isMissing) {
+        options.push({
+          label: t('moveToProject'),
+          onPress: () => chooseProject(item),
+        });
+        if (isPdf) {
+          options.push({
+            label: t('editPages'),
+            onPress: () => openEditor(item.uri),
+          });
+        }
+        options.push({
+          label: t('share'),
+          onPress: () =>
+            Share.open({url: item.uri, type: item.mimeType}).catch(
+              () => undefined,
+            ),
+        });
+      }
+      options.push({
+        label: t('removeFromList'),
+        destructive: true,
+        onPress: async () => setRecents(await removeRecent(item.id)),
+      });
+      setSheet({title: item.name, subtitle: item.destination, options});
     },
-    [missing, openEditor],
+    [missing, openEditor, chooseProject],
   );
   // Il ref blocca i doppi tap prima che lo stato `scanning` venga aggiornato.
   const scanningRef = useRef(false);
@@ -198,10 +258,7 @@ export default function HomeScreen() {
             <View>
               <Text style={styles.sectionTitle}>{t('recentScans')}</Text>
               {settings.projects.length > 0 && (
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.chips}>
+                <View style={styles.chips}>
                   {[undefined, ...settings.projects].map(p => {
                     const selected = p?.id === activeFilter;
                     return (
@@ -221,7 +278,7 @@ export default function HomeScreen() {
                       </TouchableOpacity>
                     );
                   })}
-                </ScrollView>
+                </View>
               )}
             </View>
           }
@@ -247,6 +304,13 @@ export default function HomeScreen() {
                 <Text style={styles.rowName} numberOfLines={1}>
                   {item.name}
                 </Text>
+                {projectName(item) ? (
+                  <View style={styles.projectBadge}>
+                    <Text style={styles.projectBadgeText} numberOfLines={1}>
+                      📁 {projectName(item)}
+                    </Text>
+                  </View>
+                ) : null}
                 <Text style={styles.rowMeta} numberOfLines={1}>
                   {new Date(item.savedAt).toLocaleDateString()} ·{' '}
                   {item.pageCount}{' '}
@@ -296,6 +360,19 @@ export default function HomeScreen() {
           )}
         </TouchableOpacity>
       </View>
+      <ActionSheet
+        visible={sheet !== null}
+        title={sheet?.title}
+        subtitle={sheet?.subtitle}
+        options={sheet?.options ?? []}
+        onClose={() => setSheet(null)}
+      />
+      {moving && (
+        <View style={styles.overlay}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={styles.overlayText}>{t('moving')}</Text>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -324,7 +401,15 @@ const styles = StyleSheet.create({
   settingsIcon: {fontSize: 26, color: '#555'},
   body: {flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40},
   list: {flex: 1},
-  chips: {gap: 8, paddingHorizontal: 20, paddingBottom: 8},
+  // Le etichette vanno a capo: con lo scorrimento orizzontale non si capiva
+  // che ce n'erano altre fuori dallo schermo.
+  chips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingBottom: 8,
+  },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -357,6 +442,27 @@ const styles = StyleSheet.create({
   rowName: {fontSize: 16, color: '#1a1a1a', fontWeight: '500'},
   rowMeta: {fontSize: 12, color: '#888', marginTop: 2},
   rowMissing: {color: '#c2410c'},
+  projectBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#eef2ff',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    marginTop: 3,
+  },
+  projectBadgeText: {fontSize: 12, color: '#2563eb', fontWeight: '500'},
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  overlayText: {color: '#fff', fontSize: 16, fontWeight: '600'},
   more: {fontSize: 22, color: '#888', paddingHorizontal: 4},
   emptyText: {
     fontSize: 16,

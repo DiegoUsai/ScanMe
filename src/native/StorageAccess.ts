@@ -83,6 +83,21 @@ export async function fileExists(uri: string): Promise<boolean> {
   return StorageAccess ? StorageAccess.exists(uri) : false;
 }
 
+/** Copia un file salvato nella cache dell'app; restituisce il percorso locale. */
+export function copyFileToCache(
+  uri: string,
+  fileName: string,
+): Promise<string> {
+  return StorageAccess
+    ? StorageAccess.copyToCache(uri, fileName)
+    : unavailable();
+}
+
+/** Cancella un file salvato; false se il provider non lo consente. */
+export async function deleteSavedFile(uri: string): Promise<boolean> {
+  return StorageAccess ? StorageAccess.deleteFile(uri) : false;
+}
+
 /** Apre il file con l'app predefinita del telefono. */
 export function openFile(uri: string, mimeType: string): Promise<void> {
   return StorageAccess ? StorageAccess.openFile(uri, mimeType) : unavailable();
