@@ -3,6 +3,8 @@ import {NativeModules} from 'react-native';
 export interface ScanResult {
   /** URI `file://` delle singole pagine in JPEG. */
   pages: string[];
+  /** Dimensioni in pixel di ogni pagina (vuoto se non leggibili). */
+  pageSizes?: Array<{width?: number; height?: number}>;
   /** URI del PDF multipagina generato dallo scanner, se disponibile. */
   pdfUri?: string;
   pageCount?: number;

@@ -3,6 +3,8 @@ package com.scanmeapp
 import android.app.Activity
 import android.content.Intent
 import android.content.IntentSender
+import android.graphics.BitmapFactory
+import android.net.Uri
 import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
@@ -94,12 +96,22 @@ class DocumentScannerModule(reactContext: ReactApplicationContext) :
 
         val response = Arguments.createMap()
 
-        // Pages as JPEG URIs
+        // Pagine come URI JPEG, con le dimensioni in pixel: ML Kit non permette
+        // di scegliere risoluzione o compressione, quindi le esponiamo per
+        // poter verificare cosa produce davvero lo scanner su ogni telefono.
         val pages = Arguments.createArray()
+        val sizes = Arguments.createArray()
         result.pages?.forEach { page ->
             pages.pushString(page.imageUri.toString())
+            val size = Arguments.createMap()
+            readImageSize(page.imageUri)?.let { (width, height) ->
+                size.putInt("width", width)
+                size.putInt("height", height)
+            }
+            sizes.pushMap(size)
         }
         response.putArray("pages", pages)
+        response.putArray("pageSizes", sizes)
 
         // PDF URI if available
         result.pdf?.let { pdf ->
@@ -108,6 +120,17 @@ class DocumentScannerModule(reactContext: ReactApplicationContext) :
         }
 
         promise.resolve(response)
+    }
+
+    /** Legge larghezza e altezza del JPEG senza decodificare l'intera immagine. */
+    private fun readImageSize(uri: Uri): Pair<Int, Int>? = try {
+        val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        reactApplicationContext.contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, opts)
+        }
+        if (opts.outWidth > 0 && opts.outHeight > 0) opts.outWidth to opts.outHeight else null
+    } catch (e: Exception) {
+        null
     }
 
     override fun onNewIntent(intent: Intent) = Unit
