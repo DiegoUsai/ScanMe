@@ -14,7 +14,6 @@ import {useSettings} from '../settings/SettingsContext';
 import FormatSelector from '../components/FormatSelector';
 import {
   pickFolder,
-  releaseAccess,
   describeFolder,
   StorageErrorCode,
 } from '../native/StorageAccess';
@@ -28,27 +27,19 @@ export default function SettingsScreen({navigation}: Props) {
 
   const handlePickFolder = useCallback(async () => {
     try {
-      const folder = await pickFolder();
-      const previous = settings.destination;
-      await update({destination: folder});
-      // Il permesso sulla cartella precedente non serve più.
-      if (previous && previous.uri !== folder.uri) {
-        await releaseAccess(previous.uri);
-      }
+      // Il permesso sulla cartella precedente non viene rilasciato: i file
+      // già salvati lì devono restare apribili dagli ultimi file.
+      await update({destination: await pickFolder()});
     } catch (error: unknown) {
       if (getErrorCode(error) !== StorageErrorCode.Cancelled) {
         Alert.alert(t('error'), t('folderPickError'));
       }
     }
-  }, [settings.destination, update]);
+  }, [update]);
 
   const handleUseDownload = useCallback(async () => {
-    const previous = settings.destination;
     await update({destination: undefined});
-    if (previous) {
-      await releaseAccess(previous.uri);
-    }
-  }, [settings.destination, update]);
+  }, [update]);
 
   return (
     <SafeAreaView style={styles.container}>

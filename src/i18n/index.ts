@@ -70,6 +70,13 @@ const strings = {
       'Non ho più accesso alla cartella scelta. Sceglila di nuovo con "Cambia" o nelle impostazioni.',
     folderPickError: 'Impossibile usare questa cartella',
     settings: 'Impostazioni',
+    fileMissing: 'File non trovato',
+    fileMissingHint:
+      "Il file è stato cancellato, spostato o non è più accessibile. Puoi toglierlo dall'elenco con una pressione lunga.",
+    openError: 'Nessuna app può aprire questo file',
+    removeFromList: "Togli dall'elenco",
+    moreActions: 'Altre azioni',
+    recentHint: 'Tocca per aprire, tieni premuto per altre azioni',
     defaultDestination: 'Destinazione predefinita',
     defaultDestinationHint:
       'Puoi scegliere una cartella del telefono o di un cloud (Drive, Dropbox, OneDrive…) se la sua app è installata e lo consente.',
@@ -140,6 +147,13 @@ const strings = {
       'ScanMe no longer has access to the chosen folder. Choose it again with "Change" or in settings.',
     folderPickError: 'This folder cannot be used',
     settings: 'Settings',
+    fileMissing: 'File not found',
+    fileMissingHint:
+      'The file was deleted, moved or is no longer accessible. Long-press to remove it from the list.',
+    openError: 'No app can open this file',
+    removeFromList: 'Remove from list',
+    moreActions: 'More actions',
+    recentHint: 'Tap to open, long-press for more actions',
     defaultDestination: 'Default destination',
     defaultDestinationHint:
       'You can pick a phone folder or a cloud (Drive, Dropbox, OneDrive…) if its app is installed and supports it.',
