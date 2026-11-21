@@ -6,8 +6,14 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  FlatList,
   TextInput,
   Alert,
+} from 'react-native';
+import type {
+  LayoutChangeEvent,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
@@ -21,6 +27,7 @@ import {
   copyToCache,
   cleanTempFiles,
 } from '../utils/files';
+import {visiblePageWindow} from '../utils/pageWindow';
 import type {RootStackParamList} from '../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Preview'>;
@@ -37,6 +44,9 @@ export default function PreviewScreen({route, navigation}: Props) {
   const {pages, pageSizes, pdfUri} = route.params;
   const [currentPage, setCurrentPage] = useState(0);
   const size = pageSizes?.[currentPage];
+  // Larghezza dell'area di anteprima: ogni pagina del carosello la occupa tutta.
+  const [pageWidth, setPageWidth] = useState(0);
+  const listRef = useRef<FlatList<string>>(null);
   const [fileName, setFileName] = useState(defaultFileName);
   const [saving, setSaving] = useState(false);
   // Il ref evita salvataggi doppi se l'utente tocca due volte prima del re-render.
@@ -127,6 +137,27 @@ export default function PreviewScreen({route, navigation}: Props) {
     }
   }, [pages, pdfUri, currentPage, fileName]);
 
+  const handlePreviewLayout = useCallback((e: LayoutChangeEvent) => {
+    setPageWidth(e.nativeEvent.layout.width);
+  }, []);
+
+  // Aggiorna la pagina corrente quando lo swipe si ferma su una nuova pagina.
+  const handleScrollEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      if (pageWidth <= 0) {
+        return;
+      }
+      const index = Math.round(e.nativeEvent.contentOffset.x / pageWidth);
+      setCurrentPage(Math.min(Math.max(index, 0), pages.length - 1));
+    },
+    [pageWidth, pages.length],
+  );
+
+  const goToPage = useCallback((index: number) => {
+    setCurrentPage(index);
+    listRef.current?.scrollToIndex({index, animated: true});
+  }, []);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -150,31 +181,57 @@ export default function PreviewScreen({route, navigation}: Props) {
         </View>
       </View>
 
-      {/* Page preview */}
-      <View style={styles.previewContainer}>
-        <Image
-          source={{uri: pages[currentPage]}}
-          style={styles.previewImage}
-          resizeMode="contain"
-          // Con il valore predefinito ("auto") Android ricampiona l'immagine
-          // a una risoluzione più bassa prima di mostrarla, e l'anteprima
-          // sembra sgranata anche quando il file è nitido.
-          resizeMethod="scale"
-        />
+      {/* Anteprima: carosello orizzontale, una pagina per schermata */}
+      <View style={styles.previewContainer} onLayout={handlePreviewLayout}>
+        {pageWidth > 0 && (
+          <FlatList
+            ref={listRef}
+            data={pages}
+            keyExtractor={(uri, i) => `${i}-${uri}`}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onMomentumScrollEnd={handleScrollEnd}
+            getItemLayout={(_, index) => ({
+              length: pageWidth,
+              offset: pageWidth * index,
+              index,
+            })}
+            // Ogni pagina è un'immagine a piena risoluzione: se ne tengono in
+            // memoria poche alla volta per non esaurire la RAM con molte pagine.
+            initialNumToRender={1}
+            windowSize={3}
+            maxToRenderPerBatch={2}
+            removeClippedSubviews
+            renderItem={({item, index}) => (
+              <Image
+                source={{uri: item}}
+                style={[styles.previewImage, {width: pageWidth}]}
+                resizeMode="contain"
+                // Con il valore predefinito ("auto") Android ricampiona l'immagine
+                // a una risoluzione più bassa prima di mostrarla, e l'anteprima
+                // sembra sgranata anche quando il file è nitido.
+                resizeMethod="scale"
+                accessibilityLabel={`${t('page')} ${index + 1} / ${
+                  pages.length
+                }`}
+              />
+            )}
+          />
+        )}
       </View>
 
-      {/* Page dots */}
+      {/* Indicatore pagine: al massimo 5, centrate sulla pagina corrente */}
       {pages.length > 1 && (
-        <ScrollView
-          horizontal
-          style={styles.dotsContainer}
-          contentContainerStyle={styles.dotsContent}
-          showsHorizontalScrollIndicator={false}>
-          {pages.map((_, i) => (
+        <View style={styles.dotsContent}>
+          {visiblePageWindow(currentPage, pages.length).map(i => (
             <TouchableOpacity
               key={i}
               style={[styles.dot, i === currentPage && styles.dotActive]}
-              onPress={() => setCurrentPage(i)}>
+              onPress={() => goToPage(i)}
+              accessibilityRole="button"
+              accessibilityState={{selected: i === currentPage}}
+              accessibilityLabel={`${t('page')} ${i + 1}`}>
               <Text
                 style={[
                   styles.dotText,
@@ -184,7 +241,7 @@ export default function PreviewScreen({route, navigation}: Props) {
               </Text>
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
       )}
 
       {/* File name input */}
@@ -262,14 +319,15 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   previewImage: {
-    width: '100%',
     height: '100%',
   },
-  dotsContainer: {maxHeight: 48},
   dotsContent: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: 16,
     gap: 8,
-    alignItems: 'center',
+    height: 48,
   },
   dot: {
     width: 36,
