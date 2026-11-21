@@ -48,6 +48,19 @@ const strings = {
     filterColor: 'Colore',
     filterGray: 'Grigio',
     filterBW: 'B/N',
+    formatPdf: 'PDF',
+    formatJpg: 'JPG',
+    formatGallery: 'Galleria',
+    formatPdfHint: 'Un unico file con tutte le pagine, in Download/ScanMe',
+    formatJpgHint: 'Un file immagine per pagina, in Download/ScanMe',
+    formatGalleryHint:
+      'Una foto per pagina, visibile in Galleria (Pictures/ScanMe)',
+    shareWithoutSaving: 'Condividi senza salvare',
+    sharedNotSaved: 'Condiviso',
+    sharedNotSavedHint:
+      'Il documento non è stato salvato sul telefono: le copie temporanee vengono cancellate quando esci.',
+    keepEditing: 'Resta qui',
+    done: 'Fatto',
   },
   en: {
     appName: 'ScanMe',
@@ -89,6 +102,18 @@ const strings = {
     filterColor: 'Color',
     filterGray: 'Gray',
     filterBW: 'B/W',
+    formatPdf: 'PDF',
+    formatJpg: 'JPG',
+    formatGallery: 'Gallery',
+    formatPdfHint: 'One file with every page, in Download/ScanMe',
+    formatJpgHint: 'One image file per page, in Download/ScanMe',
+    formatGalleryHint: 'One photo per page, shown in Gallery (Pictures/ScanMe)',
+    shareWithoutSaving: 'Share without saving',
+    sharedNotSaved: 'Shared',
+    sharedNotSavedHint:
+      'The document was not saved on your phone: temporary copies are deleted when you leave.',
+    keepEditing: 'Stay here',
+    done: 'Done',
   },
 };
 
