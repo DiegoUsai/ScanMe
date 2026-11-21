@@ -40,6 +40,7 @@ import {
 } from '../native/StorageAccess';
 import type {FolderDestination} from '../native/StorageAccess';
 import {getErrorCode} from '../native/DocumentScanner';
+import {addRecent} from '../recents/recents';
 import type {RootStackParamList} from '../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Preview'>;
@@ -137,32 +138,62 @@ export default function PreviewScreen({route, navigation}: Props) {
 
   const handleSave = useCallback(() => {
     runSave(async baseName => {
+      let savedUri: string;
+      let mimeType = 'image/jpeg';
+      let where: string;
       if (format === 'gallery') {
+        const uris: string[] = [];
         for (let i = 0; i < pages.length; i++) {
-          await saveToGallery(
-            pages[i],
-            pageFileName(baseName, i, pages.length),
+          uris.push(
+            await saveToGallery(
+              pages[i],
+              pageFileName(baseName, i, pages.length),
+            ),
           );
         }
-        return;
+        savedUri = uris[0];
+        where = t('galleryFolder');
+      } else {
+        if (destination && !(await hasAccess(destination.uri))) {
+          throw Object.assign(new Error('Folder access lost'), {
+            code: StorageErrorCode.PermissionDenied,
+          });
+        }
+        // Salva un file nella cartella scelta (SAF) o, senza cartella, in Download/ScanMe.
+        const write = (source: string, name: string, mime: string) =>
+          destination
+            ? saveToFolder(destination, [], name, mime, source)
+            : saveToDevice(source, name, mime);
+        where = destination ? describeFolder(destination) : t('downloadFolder');
+        if (format === 'pdf' && pdfUri) {
+          mimeType = 'application/pdf';
+          savedUri = await write(pdfUri, `${baseName}.pdf`, mimeType);
+        } else {
+          const uris: string[] = [];
+          for (let i = 0; i < pages.length; i++) {
+            const name = pageFileName(baseName, i, pages.length);
+            uris.push(await write(pages[i], `${name}.jpg`, mimeType));
+          }
+          savedUri = uris[0];
+        }
       }
-      if (destination && !(await hasAccess(destination.uri))) {
-        throw Object.assign(new Error('Folder access lost'), {
-          code: StorageErrorCode.PermissionDenied,
-        });
-      }
-      // Salva un file nella cartella scelta (SAF) o, senza cartella, in Download/ScanMe.
-      const write = (source: string, name: string, mime: string) =>
-        destination
-          ? saveToFolder(destination, [], name, mime, source)
-          : saveToDevice(source, name, mime);
-      if (format === 'pdf' && pdfUri) {
-        await write(pdfUri, `${baseName}.pdf`, 'application/pdf');
-        return;
-      }
-      for (let i = 0; i < pages.length; i++) {
-        const name = pageFileName(baseName, i, pages.length);
-        await write(pages[i], `${name}.jpg`, 'image/jpeg');
+      // Il file salvato sta nella cartella scelta qui: il permesso va tenuto,
+      // altrimenti non si potrebbe più aprirlo dagli ultimi file.
+      oneOffFolder.current = undefined;
+      // L'elenco degli ultimi file è un di più: se fallisce, il salvataggio resta valido.
+      try {
+        await addRecent(
+          {
+            name: baseName,
+            uri: savedUri,
+            mimeType,
+            pageCount: pages.length,
+            destination: where,
+          },
+          pages[0],
+        );
+      } catch {
+        // Ignorato.
       }
     });
   }, [destination, format, pages, pdfUri, runSave]);

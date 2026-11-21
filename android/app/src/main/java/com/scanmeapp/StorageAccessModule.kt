@@ -2,12 +2,15 @@ package com.scanmeapp
 
 import android.app.Activity
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.DocumentsContract
 import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
 import java.io.File
 import java.io.FileInputStream
+import java.io.FileOutputStream
 
 /**
  * Salvataggio tramite Storage Access Framework (SAF).
@@ -195,6 +198,71 @@ class StorageAccessModule(reactContext: ReactApplicationContext) :
         } catch (e: Exception) {
             null
         } ?: tree.lastPathSegment ?: tree.toString()
+    }
+
+    /**
+     * Crea una miniatura JPEG di lato massimo `maxSize` px. La miniatura resta
+     * nella memoria privata dell'app: non compare in galleria né nei backup.
+     */
+    @ReactMethod
+    fun createThumbnail(sourcePath: String, destPath: String, maxSize: Int, promise: Promise) {
+        try {
+            val path = sourcePath.removePrefix("file://")
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(path, bounds)
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= maxSize && bounds.outHeight / (sample * 2) >= maxSize) {
+                sample *= 2
+            }
+            val decoded = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
+                ?: throw IllegalStateException("Cannot decode image")
+            val scale = maxSize.toFloat() / maxOf(decoded.width, decoded.height)
+            val thumb = if (scale < 1f) {
+                Bitmap.createScaledBitmap(
+                    decoded, (decoded.width * scale).toInt(), (decoded.height * scale).toInt(), true
+                )
+            } else decoded
+            File(destPath).parentFile?.mkdirs()
+            FileOutputStream(destPath).use { thumb.compress(Bitmap.CompressFormat.JPEG, 80, it) }
+            if (thumb !== decoded) thumb.recycle()
+            decoded.recycle()
+            promise.resolve(destPath)
+        } catch (e: Exception) {
+            promise.reject("THUMBNAIL_ERROR", e.message ?: "Cannot create thumbnail")
+        }
+    }
+
+    /** true se il documento `content://` esiste ancora ed è leggibile. */
+    @ReactMethod
+    fun exists(uri: String, promise: Promise) {
+        try {
+            reactApplicationContext.contentResolver.query(
+                Uri.parse(uri), arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME), null, null, null
+            )?.use { promise.resolve(it.moveToFirst()); return }
+            promise.resolve(false)
+        } catch (e: Exception) {
+            promise.resolve(false)
+        }
+    }
+
+    /** Apre il documento con l'app predefinita del telefono (lettore PDF, galleria...). */
+    @ReactMethod
+    fun openFile(uri: String, mimeType: String, promise: Promise) {
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            promise.reject("NO_ACTIVITY", "No activity available")
+            return
+        }
+        try {
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(Uri.parse(uri), mimeType)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            activity.startActivity(Intent.createChooser(intent, null))
+            promise.resolve(null)
+        } catch (e: Exception) {
+            promise.reject("OPEN_ERROR", e.message ?: "No app can open this file")
+        }
     }
 
     /** Nome dell'app che fornisce la cartella (es. "Drive"), se ricavabile. */

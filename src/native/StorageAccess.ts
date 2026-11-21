@@ -66,3 +66,24 @@ export function describeFolder(folder: FolderDestination): string {
     ? `${folder.provider} › ${folder.name}`
     : folder.name;
 }
+
+/** Crea una miniatura JPEG (lato massimo `maxSize` px) in `destPath`. */
+export function createThumbnail(
+  sourcePath: string,
+  destPath: string,
+  maxSize: number,
+): Promise<string> {
+  return StorageAccess
+    ? StorageAccess.createThumbnail(sourcePath, destPath, maxSize)
+    : unavailable();
+}
+
+/** true se il file salvato esiste ancora (non è stato cancellato o spostato). */
+export async function fileExists(uri: string): Promise<boolean> {
+  return StorageAccess ? StorageAccess.exists(uri) : false;
+}
+
+/** Apre il file con l'app predefinita del telefono. */
+export function openFile(uri: string, mimeType: string): Promise<void> {
+  return StorageAccess ? StorageAccess.openFile(uri, mimeType) : unavailable();
+}
