@@ -9,6 +9,7 @@ export type RootStackParamList = {
   Home: undefined;
   Preview: {
     pages: string[];
+    pageSizes?: Array<{width?: number; height?: number}>;
     pdfUri?: string;
   };
 };
