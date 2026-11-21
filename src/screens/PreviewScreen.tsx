@@ -19,6 +19,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import Share from 'react-native-share';
 import {t} from '../i18n';
+import type {StringKey} from '../i18n';
 import {
   defaultFileName,
   sanitizeFileName,
@@ -40,6 +41,21 @@ function pageFileName(baseName: string, index: number, total: number): string {
   return total > 1 ? `${baseName}_${index + 1}` : baseName;
 }
 
+/** Formati di uscita offerti all'utente. */
+type OutputFormat = 'pdf' | 'jpg' | 'gallery';
+
+const FORMAT_LABEL: Record<OutputFormat, StringKey> = {
+  pdf: 'formatPdf',
+  jpg: 'formatJpg',
+  gallery: 'formatGallery',
+};
+
+const FORMAT_HINT: Record<OutputFormat, StringKey> = {
+  pdf: 'formatPdfHint',
+  jpg: 'formatJpgHint',
+  gallery: 'formatGalleryHint',
+};
+
 export default function PreviewScreen({route, navigation}: Props) {
   const {pages, pageSizes, pdfUri} = route.params;
   const [currentPage, setCurrentPage] = useState(0);
@@ -49,6 +65,11 @@ export default function PreviewScreen({route, navigation}: Props) {
   const listRef = useRef<FlatList<string>>(null);
   const [fileName, setFileName] = useState(defaultFileName);
   const [saving, setSaving] = useState(false);
+  // Il PDF è la scelta predefinita: un solo file con tutte le pagine.
+  const [format, setFormat] = useState<OutputFormat>(pdfUri ? 'pdf' : 'jpg');
+  const formats: OutputFormat[] = pdfUri
+    ? ['pdf', 'jpg', 'gallery']
+    : ['jpg', 'gallery'];
   // Il ref evita salvataggi doppi se l'utente tocca due volte prima del re-render.
   const savingRef = useRef(false);
   // Copie create in cache per la condivisione, da eliminare all'uscita.
@@ -89,53 +110,64 @@ export default function PreviewScreen({route, navigation}: Props) {
     [fileName, navigation],
   );
 
-  const handleSavePdf = useCallback(() => {
-    if (!pdfUri) {
-      return;
-    }
+  const handleSave = useCallback(() => {
     runSave(async baseName => {
-      await saveToDevice(pdfUri, `${baseName}.pdf`, 'application/pdf');
-    });
-  }, [pdfUri, runSave]);
-
-  const handleSaveJpg = useCallback(() => {
-    runSave(async baseName => {
+      if (format === 'pdf' && pdfUri) {
+        await saveToDevice(pdfUri, `${baseName}.pdf`, 'application/pdf');
+        return;
+      }
       for (let i = 0; i < pages.length; i++) {
         const name = pageFileName(baseName, i, pages.length);
-        await saveToDevice(pages[i], `${name}.jpg`, 'image/jpeg');
+        if (format === 'gallery') {
+          await saveToGallery(pages[i], name);
+        } else {
+          await saveToDevice(pages[i], `${name}.jpg`, 'image/jpeg');
+        }
       }
     });
-  }, [pages, runSave]);
+  }, [format, pages, pdfUri, runSave]);
 
-  const handleSaveGallery = useCallback(() => {
-    runSave(async baseName => {
-      for (let i = 0; i < pages.length; i++) {
-        await saveToGallery(pages[i], pageFileName(baseName, i, pages.length));
-      }
-    });
-  }, [pages, runSave]);
-
+  /**
+   * Condivide il documento nel formato scelto senza salvarlo sul telefono:
+   * le copie temporanee restano nella cache dell'app e vengono cancellate
+   * all'uscita dall'anteprima.
+   */
   const handleShare = useCallback(async () => {
-    // Condivide il PDF se disponibile, altrimenti la pagina visualizzata.
-    const isPdf = pdfUri !== undefined;
-    const uri = pdfUri ?? pages[currentPage];
-    const shareName = `${sanitizeFileName(fileName)}.${isPdf ? 'pdf' : 'jpg'}`;
-    const mimeType = isPdf ? 'application/pdf' : 'image/jpeg';
+    if (savingRef.current) {
+      return;
+    }
+    const baseName = sanitizeFileName(fileName);
+    const isPdf = format === 'pdf' && pdfUri !== undefined;
     try {
-      const cachePath = await copyToCache(uri, shareName);
-      shareCopies.current.push(cachePath);
+      const sources = isPdf
+        ? [{uri: pdfUri, name: `${baseName}.pdf`}]
+        : pages.map((uri, i) => ({
+            uri,
+            name: `${pageFileName(baseName, i, pages.length)}.jpg`,
+          }));
+      const urls: string[] = [];
+      for (const source of sources) {
+        const cachePath = await copyToCache(source.uri, source.name);
+        shareCopies.current.push(cachePath);
+        urls.push(`file://${cachePath}`);
+      }
       await Share.open({
-        url: `file://${cachePath}`,
-        type: mimeType,
-        filename: shareName,
+        urls,
+        type: isPdf ? 'application/pdf' : 'image/jpeg',
+        filenames: sources.map(source => source.name),
+        failOnCancel: true,
       });
+      Alert.alert(t('sharedNotSaved'), t('sharedNotSavedHint'), [
+        {text: t('keepEditing'), style: 'cancel'},
+        {text: t('done'), onPress: () => navigation.goBack()},
+      ]);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : undefined;
       if (message !== SHARE_DISMISSED_MESSAGE) {
         Alert.alert(t('error'), t('shareError'));
       }
     }
-  }, [pages, pdfUri, currentPage, fileName]);
+  }, [fileName, format, pages, pdfUri, navigation]);
 
   const handlePreviewLayout = useCallback((e: LayoutChangeEvent) => {
     setPageWidth(e.nativeEvent.layout.width);
@@ -255,43 +287,50 @@ export default function PreviewScreen({route, navigation}: Props) {
         />
       </View>
 
-      {/* Action buttons */}
-      <ScrollView
-        horizontal
-        style={styles.actionsContainer}
-        contentContainerStyle={styles.actionsContent}
-        showsHorizontalScrollIndicator={false}>
-        {pdfUri && (
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={handleSavePdf}
-            disabled={saving}>
-            <Text style={styles.actionIcon}>📄</Text>
-            <Text style={styles.actionLabel}>{t('savePdf')}</Text>
-          </TouchableOpacity>
-        )}
+      {/* Formato di uscita */}
+      <View style={styles.formatContainer}>
+        <Text style={styles.label}>{t('exportFormat')}</Text>
+        <View style={styles.segmented} accessibilityRole="radiogroup">
+          {formats.map(f => (
+            <TouchableOpacity
+              key={f}
+              style={[styles.segment, f === format && styles.segmentActive]}
+              onPress={() => setFormat(f)}
+              disabled={saving}
+              accessibilityRole="radio"
+              accessibilityState={{checked: f === format}}>
+              <Text
+                style={[
+                  styles.segmentText,
+                  f === format && styles.segmentTextActive,
+                ]}>
+                {t(FORMAT_LABEL[f])}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <Text style={styles.formatHint}>{t(FORMAT_HINT[format])}</Text>
+      </View>
+
+      {/* Azioni: salva oppure condividi senza salvare */}
+      <View style={styles.actions}>
         <TouchableOpacity
-          style={styles.actionButton}
-          onPress={handleSaveJpg}
-          disabled={saving}>
-          <Text style={styles.actionIcon}>🖼</Text>
-          <Text style={styles.actionLabel}>{t('saveJpg')}</Text>
+          style={[styles.primaryButton, saving && styles.buttonDisabled]}
+          onPress={handleSave}
+          disabled={saving}
+          accessibilityRole="button">
+          <Text style={styles.primaryButtonText}>{t('save')}</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={styles.actionButton}
-          onPress={handleSaveGallery}
-          disabled={saving}>
-          <Text style={styles.actionIcon}>📱</Text>
-          <Text style={styles.actionLabel}>{t('saveToGallery')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.actionButton}
+          style={[styles.secondaryButton, saving && styles.buttonDisabled]}
           onPress={handleShare}
-          disabled={saving}>
-          <Text style={styles.actionIcon}>↗</Text>
-          <Text style={styles.actionLabel}>{t('share')}</Text>
+          disabled={saving}
+          accessibilityRole="button">
+          <Text style={styles.secondaryButtonText}>
+            {t('shareWithoutSaving')}
+          </Text>
         </TouchableOpacity>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -354,20 +393,51 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#1a1a1a',
   },
-  actionsContainer: {maxHeight: 88},
-  actionsContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 32,
-    gap: 12,
+  formatContainer: {paddingHorizontal: 16, paddingBottom: 12},
+  segmented: {
+    flexDirection: 'row',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 10,
+    padding: 3,
   },
-  actionButton: {
-    backgroundColor: '#f5f5f5',
-    borderRadius: 12,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+  segment: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
     alignItems: 'center',
-    minWidth: 100,
   },
-  actionIcon: {fontSize: 24, marginBottom: 4},
-  actionLabel: {fontSize: 12, color: '#1a1a1a', fontWeight: '500'},
+  segmentActive: {
+    backgroundColor: '#fff',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: {width: 0, height: 1},
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+  },
+  segmentText: {fontSize: 14, color: '#666', fontWeight: '500'},
+  segmentTextActive: {color: '#2563eb', fontWeight: '600'},
+  formatHint: {fontSize: 12, color: '#888', marginTop: 6},
+  actions: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  primaryButton: {
+    flex: 1,
+    backgroundColor: '#2563eb',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  primaryButtonText: {color: '#fff', fontSize: 16, fontWeight: '600'},
+  secondaryButton: {
+    flex: 1,
+    backgroundColor: '#eef2ff',
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  secondaryButtonText: {color: '#2563eb', fontSize: 16, fontWeight: '600'},
+  buttonDisabled: {opacity: 0.5},
 });
