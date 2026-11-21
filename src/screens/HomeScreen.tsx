@@ -1,4 +1,4 @@
-import React, {useState, useCallback} from 'react';
+import React, {useState, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,12 @@ import {
   TouchableOpacity,
   Alert,
   StatusBar,
+  ActivityIndicator,
 } from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {scan} from '../native/DocumentScanner';
+import {scan, getErrorCode, ScanErrorCode} from '../native/DocumentScanner';
 import {t} from '../i18n';
 import type {RootStackParamList} from '../App';
 
@@ -18,29 +20,38 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const [scanning, setScanning] = useState(false);
+  // Il ref blocca i doppi tap prima che lo stato `scanning` venga aggiornato.
+  const scanningRef = useRef(false);
 
   const handleScan = useCallback(async () => {
-    if (scanning) return;
+    if (scanningRef.current) {
+      return;
+    }
+    scanningRef.current = true;
     setScanning(true);
     try {
-      const result = await scan(0);
+      const result = await scan();
       if (result.pages.length > 0) {
         navigation.navigate('Preview', {
           pages: result.pages,
           pdfUri: result.pdfUri,
         });
       }
-    } catch (e: any) {
-      if (e.code !== 'SCAN_CANCELLED') {
+    } catch (error: unknown) {
+      const code = getErrorCode(error);
+      if (code === ScanErrorCode.Unavailable) {
+        Alert.alert(t('error'), t('scannerUnavailable'));
+      } else if (code !== ScanErrorCode.Cancelled) {
         Alert.alert(t('error'), t('scanError'));
       }
     } finally {
+      scanningRef.current = false;
       setScanning(false);
     }
-  }, [scanning, navigation]);
+  }, [navigation]);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
         <Text style={styles.title}>{t('appName')}</Text>
@@ -53,13 +64,18 @@ export default function HomeScreen() {
           style={styles.scanButton}
           onPress={handleScan}
           activeOpacity={0.8}
-          disabled={scanning}>
-          <Text style={styles.scanButtonText}>
-            {scanning ? '...' : t('scan')}
-          </Text>
+          disabled={scanning}
+          accessibilityRole="button"
+          accessibilityLabel={t('scanDocument')}
+          accessibilityState={{busy: scanning, disabled: scanning}}>
+          {scanning ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.scanButtonText}>{t('scan')}</Text>
+          )}
         </TouchableOpacity>
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 

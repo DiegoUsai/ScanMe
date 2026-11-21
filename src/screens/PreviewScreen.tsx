@@ -1,4 +1,4 @@
-import React, {useState, useCallback} from 'react';
+import React, {useState, useCallback, useRef} from 'react';
 import {
   View,
   Text,
@@ -8,103 +8,118 @@ import {
   ScrollView,
   TextInput,
   Alert,
-  Dimensions,
 } from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import Share from 'react-native-share';
 import {t} from '../i18n';
-import {defaultFileName, saveToDevice, saveToGallery, copyToCache} from '../utils/files';
+import {
+  defaultFileName,
+  sanitizeFileName,
+  saveToDevice,
+  saveToGallery,
+  copyToCache,
+} from '../utils/files';
 import type {RootStackParamList} from '../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Preview'>;
 
-const {width: SCREEN_WIDTH} = Dimensions.get('window');
+/** Messaggio con cui react-native-share rifiuta la promise quando l'utente chiude il foglio. */
+const SHARE_DISMISSED_MESSAGE = 'User did not share';
+
+/** Nome del file della pagina `index` (0-based): suffisso "_N" solo se le pagine sono più di una. */
+function pageFileName(baseName: string, index: number, total: number): string {
+  return total > 1 ? `${baseName}_${index + 1}` : baseName;
+}
 
 export default function PreviewScreen({route, navigation}: Props) {
   const {pages, pdfUri} = route.params;
   const [currentPage, setCurrentPage] = useState(0);
   const [fileName, setFileName] = useState(defaultFileName);
   const [saving, setSaving] = useState(false);
+  // Il ref evita salvataggi doppi se l'utente tocca due volte prima del re-render.
+  const savingRef = useRef(false);
 
-  const handleSavePdf = useCallback(async () => {
-    if (!pdfUri || saving) return;
-    setSaving(true);
-    try {
-      await saveToDevice(pdfUri, `${fileName}.pdf`, 'application/pdf');
-      Alert.alert(t('saved'));
-      navigation.goBack();
-    } catch {
-      Alert.alert(t('error'), t('saveError'));
-    } finally {
-      setSaving(false);
-    }
-  }, [pdfUri, fileName, saving, navigation]);
-
-  const handleSaveJpg = useCallback(async () => {
-    if (saving) return;
-    setSaving(true);
-    try {
-      if (pages.length === 1) {
-        await saveToDevice(pages[0], `${fileName}.jpg`, 'image/jpeg');
-      } else {
-        for (let i = 0; i < pages.length; i++) {
-          await saveToDevice(
-            pages[i],
-            `${fileName}_${i + 1}.jpg`,
-            'image/jpeg',
-          );
-        }
+  /**
+   * Esegue un'operazione di salvataggio mostrando l'esito all'utente.
+   * Centralizza guardia anti-doppio-tap, gestione errori e ritorno alla Home.
+   */
+  const runSave = useCallback(
+    async (save: (baseName: string) => Promise<void>) => {
+      if (savingRef.current) {
+        return;
       }
-      Alert.alert(t('saved'));
-      navigation.goBack();
-    } catch {
-      Alert.alert(t('error'), t('saveError'));
-    } finally {
-      setSaving(false);
-    }
-  }, [pages, fileName, saving, navigation]);
+      savingRef.current = true;
+      setSaving(true);
+      try {
+        await save(sanitizeFileName(fileName));
+        Alert.alert(t('saved'));
+        navigation.goBack();
+      } catch {
+        Alert.alert(t('error'), t('saveError'));
+      } finally {
+        savingRef.current = false;
+        setSaving(false);
+      }
+    },
+    [fileName, navigation],
+  );
 
-  const handleSaveGallery = useCallback(async () => {
-    if (saving) return;
-    setSaving(true);
-    try {
+  const handleSavePdf = useCallback(() => {
+    if (!pdfUri) {
+      return;
+    }
+    runSave(async baseName => {
+      await saveToDevice(pdfUri, `${baseName}.pdf`, 'application/pdf');
+    });
+  }, [pdfUri, runSave]);
+
+  const handleSaveJpg = useCallback(() => {
+    runSave(async baseName => {
       for (let i = 0; i < pages.length; i++) {
-        const suffix = pages.length > 1 ? `_${i + 1}` : '';
-        await saveToGallery(pages[i], `${fileName}${suffix}`);
+        const name = pageFileName(baseName, i, pages.length);
+        await saveToDevice(pages[i], `${name}.jpg`, 'image/jpeg');
       }
-      Alert.alert(t('saved'));
-      navigation.goBack();
-    } catch {
-      Alert.alert(t('error'), t('saveError'));
-    } finally {
-      setSaving(false);
-    }
-  }, [pages, fileName, saving, navigation]);
+    });
+  }, [pages, runSave]);
+
+  const handleSaveGallery = useCallback(() => {
+    runSave(async baseName => {
+      for (let i = 0; i < pages.length; i++) {
+        await saveToGallery(pages[i], pageFileName(baseName, i, pages.length));
+      }
+    });
+  }, [pages, runSave]);
 
   const handleShare = useCallback(async () => {
+    // Condivide il PDF se disponibile, altrimenti la pagina visualizzata.
+    const isPdf = pdfUri !== undefined;
+    const uri = pdfUri ?? pages[currentPage];
+    const shareName = `${sanitizeFileName(fileName)}.${isPdf ? 'pdf' : 'jpg'}`;
+    const mimeType = isPdf ? 'application/pdf' : 'image/jpeg';
     try {
-      // Share PDF if available, otherwise share current page image
-      const uri = pdfUri ?? pages[currentPage];
-      const cachePath = await copyToCache(
-        uri,
-        pdfUri ? `${fileName}.pdf` : `${fileName}.jpg`,
-      );
+      const cachePath = await copyToCache(uri, shareName);
       await Share.open({
         url: `file://${cachePath}`,
-        type: pdfUri ? 'application/pdf' : 'image/jpeg',
-        filename: pdfUri ? `${fileName}.pdf` : `${fileName}.jpg`,
+        type: mimeType,
+        filename: shareName,
       });
-    } catch (e: any) {
-      if (e?.message !== 'User did not share') {
-        Alert.alert(t('error'), e?.message);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : undefined;
+      if (message !== SHARE_DISMISSED_MESSAGE) {
+        Alert.alert(t('error'), t('shareError'));
       }
     }
   }, [pages, pdfUri, currentPage, fileName]);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          accessibilityRole="button"
+          accessibilityLabel={t('back')}
+          hitSlop={12}>
           <Text style={styles.backButton}>←</Text>
         </TouchableOpacity>
         <Text style={styles.title}>{t('preview')}</Text>
@@ -194,7 +209,7 @@ export default function PreviewScreen({route, navigation}: Props) {
           <Text style={styles.actionLabel}>{t('share')}</Text>
         </TouchableOpacity>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
