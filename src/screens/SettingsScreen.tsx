@@ -83,6 +83,19 @@ export default function SettingsScreen({navigation}: Props) {
           </View>
         </View>
 
+        <Text style={styles.sectionTitle}>{t('projects')}</Text>
+        <TouchableOpacity
+          style={styles.card}
+          onPress={() => navigation.navigate('Projects')}
+          accessibilityRole="button">
+          <Text style={styles.value}>
+            {settings.projects.length === 0
+              ? t('noProjects')
+              : settings.projects.map(p => p.name).join(', ')}
+          </Text>
+          <Text style={styles.hint}>{t('manageProjects')}</Text>
+        </TouchableOpacity>
+
         <Text style={styles.sectionTitle}>{t('defaultFormat')}</Text>
         <View style={styles.card}>
           <FormatSelector

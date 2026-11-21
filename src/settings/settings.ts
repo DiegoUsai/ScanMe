@@ -4,14 +4,26 @@ import type {FolderDestination} from '../native/StorageAccess';
 /** Formati di uscita offerti all'utente. */
 export type OutputFormat = 'pdf' | 'jpg' | 'gallery';
 
+/**
+ * Un progetto raggruppa le scansioni: al salvataggio diventa una sottocartella
+ * con il suo nome dentro la sua destinazione.
+ */
+export interface Project {
+  id: string;
+  name: string;
+  /** Destinazione del progetto; assente = destinazione predefinita. */
+  destination?: FolderDestination;
+}
+
 export interface Settings {
   /** Cartella predefinita; assente = Download/ScanMe tramite MediaStore. */
   destination?: FolderDestination;
   /** Formato proposto nell'anteprima. */
   defaultFormat: OutputFormat;
+  projects: Project[];
 }
 
-export const DEFAULT_SETTINGS: Settings = {defaultFormat: 'pdf'};
+export const DEFAULT_SETTINGS: Settings = {defaultFormat: 'pdf', projects: []};
 
 const FORMATS: readonly OutputFormat[] = ['pdf', 'jpg', 'gallery'];
 
@@ -29,27 +41,52 @@ export function parseSettings(raw: unknown): Settings {
     return {...DEFAULT_SETTINGS};
   }
   const data = raw as Record<string, unknown>;
-  const settings: Settings = {...DEFAULT_SETTINGS};
+  const settings: Settings = {...DEFAULT_SETTINGS, projects: []};
   if (
     typeof data.defaultFormat === 'string' &&
     FORMATS.includes(data.defaultFormat as OutputFormat)
   ) {
     settings.defaultFormat = data.defaultFormat as OutputFormat;
   }
-  const dest = data.destination as Record<string, unknown> | undefined;
+  settings.destination = parseDestination(data.destination);
+  settings.projects = Array.isArray(data.projects)
+    ? data.projects.flatMap((p: unknown) => {
+        const project = p as Record<string, unknown> | null;
+        if (
+          !project ||
+          typeof project.id !== 'string' ||
+          typeof project.name !== 'string' ||
+          project.name.trim() === ''
+        ) {
+          return [];
+        }
+        return [
+          {
+            id: project.id,
+            name: project.name,
+            destination: parseDestination(project.destination),
+          },
+        ];
+      })
+    : [];
+  return settings;
+}
+
+function parseDestination(raw: unknown): FolderDestination | undefined {
+  const dest = raw as Record<string, unknown> | undefined | null;
   if (
     dest &&
     typeof dest.uri === 'string' &&
     dest.uri.startsWith('content://') &&
     typeof dest.name === 'string'
   ) {
-    settings.destination = {
+    return {
       uri: dest.uri,
       name: dest.name,
       provider: typeof dest.provider === 'string' ? dest.provider : undefined,
     };
   }
-  return settings;
+  return undefined;
 }
 
 export async function loadSettings(): Promise<Settings> {
