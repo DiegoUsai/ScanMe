@@ -5,7 +5,6 @@ import {
   Image,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   FlatList,
   TextInput,
   Alert,
@@ -19,7 +18,6 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import Share from 'react-native-share';
 import {t} from '../i18n';
-import type {StringKey} from '../i18n';
 import {
   defaultFileName,
   sanitizeFileName,
@@ -29,6 +27,19 @@ import {
   cleanTempFiles,
 } from '../utils/files';
 import {visiblePageWindow} from '../utils/pageWindow';
+import FormatSelector from '../components/FormatSelector';
+import {useSettings} from '../settings/SettingsContext';
+import type {OutputFormat} from '../settings/settings';
+import {
+  pickFolder,
+  hasAccess,
+  releaseAccess,
+  saveToFolder,
+  describeFolder,
+  StorageErrorCode,
+} from '../native/StorageAccess';
+import type {FolderDestination} from '../native/StorageAccess';
+import {getErrorCode} from '../native/DocumentScanner';
 import type {RootStackParamList} from '../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Preview'>;
@@ -41,21 +52,6 @@ function pageFileName(baseName: string, index: number, total: number): string {
   return total > 1 ? `${baseName}_${index + 1}` : baseName;
 }
 
-/** Formati di uscita offerti all'utente. */
-type OutputFormat = 'pdf' | 'jpg' | 'gallery';
-
-const FORMAT_LABEL: Record<OutputFormat, StringKey> = {
-  pdf: 'formatPdf',
-  jpg: 'formatJpg',
-  gallery: 'formatGallery',
-};
-
-const FORMAT_HINT: Record<OutputFormat, StringKey> = {
-  pdf: 'formatPdfHint',
-  jpg: 'formatJpgHint',
-  gallery: 'formatGalleryHint',
-};
-
 export default function PreviewScreen({route, navigation}: Props) {
   const {pages, pageSizes, pdfUri} = route.params;
   const [currentPage, setCurrentPage] = useState(0);
@@ -65,13 +61,37 @@ export default function PreviewScreen({route, navigation}: Props) {
   const listRef = useRef<FlatList<string>>(null);
   const [fileName, setFileName] = useState(defaultFileName);
   const [saving, setSaving] = useState(false);
-  // Il PDF è la scelta predefinita: un solo file con tutte le pagine.
-  const [format, setFormat] = useState<OutputFormat>(pdfUri ? 'pdf' : 'jpg');
+  const {settings} = useSettings();
+  // Formato iniziale dalle impostazioni; senza PDF di ML Kit si ripiega su JPG.
+  const [format, setFormat] = useState<OutputFormat>(
+    settings.defaultFormat === 'pdf' && !pdfUri
+      ? 'jpg'
+      : settings.defaultFormat,
+  );
+  // Destinazione di questo salvataggio: parte da quella predefinita e si può
+  // cambiare qui senza toccare le impostazioni. undefined = Download/ScanMe.
+  const [destination, setDestination] = useState<FolderDestination | undefined>(
+    settings.destination,
+  );
   const formats: OutputFormat[] = pdfUri
     ? ['pdf', 'jpg', 'gallery']
     : ['jpg', 'gallery'];
   // Il ref evita salvataggi doppi se l'utente tocca due volte prima del re-render.
   const savingRef = useRef(false);
+  // Cartella scelta solo per questo salvataggio: il suo permesso persistente
+  // va rilasciato all'uscita, altrimenti si accumulano (Android ne tiene al
+  // massimo 512 per app).
+  const oneOffFolder = useRef<string | undefined>(undefined);
+  const defaultFolderUri = settings.destination?.uri;
+  useEffect(
+    () => () => {
+      const uri = oneOffFolder.current;
+      if (uri && uri !== defaultFolderUri) {
+        releaseAccess(uri);
+      }
+    },
+    [defaultFolderUri],
+  );
   // Copie create in cache per la condivisione, da eliminare all'uscita.
   const shareCopies = useRef<string[]>([]);
 
@@ -100,8 +120,13 @@ export default function PreviewScreen({route, navigation}: Props) {
         await save(sanitizeFileName(fileName));
         Alert.alert(t('saved'));
         navigation.goBack();
-      } catch {
-        Alert.alert(t('error'), t('saveError'));
+      } catch (error: unknown) {
+        Alert.alert(
+          t('error'),
+          getErrorCode(error) === StorageErrorCode.PermissionDenied
+            ? t('folderAccessLost')
+            : t('saveError'),
+        );
       } finally {
         savingRef.current = false;
         setSaving(false);
@@ -112,20 +137,68 @@ export default function PreviewScreen({route, navigation}: Props) {
 
   const handleSave = useCallback(() => {
     runSave(async baseName => {
+      if (format === 'gallery') {
+        for (let i = 0; i < pages.length; i++) {
+          await saveToGallery(
+            pages[i],
+            pageFileName(baseName, i, pages.length),
+          );
+        }
+        return;
+      }
+      if (destination && !(await hasAccess(destination.uri))) {
+        throw Object.assign(new Error('Folder access lost'), {
+          code: StorageErrorCode.PermissionDenied,
+        });
+      }
+      // Salva un file nella cartella scelta (SAF) o, senza cartella, in Download/ScanMe.
+      const write = (source: string, name: string, mime: string) =>
+        destination
+          ? saveToFolder(destination, [], name, mime, source)
+          : saveToDevice(source, name, mime);
       if (format === 'pdf' && pdfUri) {
-        await saveToDevice(pdfUri, `${baseName}.pdf`, 'application/pdf');
+        await write(pdfUri, `${baseName}.pdf`, 'application/pdf');
         return;
       }
       for (let i = 0; i < pages.length; i++) {
         const name = pageFileName(baseName, i, pages.length);
-        if (format === 'gallery') {
-          await saveToGallery(pages[i], name);
-        } else {
-          await saveToDevice(pages[i], `${name}.jpg`, 'image/jpeg');
-        }
+        await write(pages[i], `${name}.jpg`, 'image/jpeg');
       }
     });
-  }, [format, pages, pdfUri, runSave]);
+  }, [destination, format, pages, pdfUri, runSave]);
+
+  /** Cambia la destinazione solo per questo salvataggio. */
+  const handleChangeDestination = useCallback(() => {
+    Alert.alert(t('whereToSave'), undefined, [
+      {text: t('cancel'), style: 'cancel'},
+      {
+        text: t('downloadFolder'),
+        onPress: () => setDestination(undefined),
+      },
+      {
+        text: t('chooseFolder'),
+        onPress: async () => {
+          try {
+            const folder = await pickFolder();
+            const previous = oneOffFolder.current;
+            if (
+              previous &&
+              previous !== folder.uri &&
+              previous !== defaultFolderUri
+            ) {
+              releaseAccess(previous);
+            }
+            oneOffFolder.current = folder.uri;
+            setDestination(folder);
+          } catch (error: unknown) {
+            if (getErrorCode(error) !== StorageErrorCode.Cancelled) {
+              Alert.alert(t('error'), t('folderPickError'));
+            }
+          }
+        },
+      },
+    ]);
+  }, [defaultFolderUri]);
 
   /**
    * Condivide il documento nel formato scelto senza salvarlo sul telefono:
@@ -290,26 +363,35 @@ export default function PreviewScreen({route, navigation}: Props) {
       {/* Formato di uscita */}
       <View style={styles.formatContainer}>
         <Text style={styles.label}>{t('exportFormat')}</Text>
-        <View style={styles.segmented} accessibilityRole="radiogroup">
-          {formats.map(f => (
-            <TouchableOpacity
-              key={f}
-              style={[styles.segment, f === format && styles.segmentActive]}
-              onPress={() => setFormat(f)}
-              disabled={saving}
-              accessibilityRole="radio"
-              accessibilityState={{checked: f === format}}>
-              <Text
-                style={[
-                  styles.segmentText,
-                  f === format && styles.segmentTextActive,
-                ]}>
-                {t(FORMAT_LABEL[f])}
-              </Text>
-            </TouchableOpacity>
-          ))}
+        <FormatSelector
+          formats={formats}
+          value={format}
+          onChange={setFormat}
+          disabled={saving}
+        />
+      </View>
+
+      {/* Destinazione: la Galleria ha una posizione fissa */}
+      <View style={styles.destinationRow}>
+        <View style={styles.destinationText}>
+          <Text style={styles.label}>{t('whereToSave')}</Text>
+          <Text style={styles.destinationName} numberOfLines={1}>
+            {format === 'gallery'
+              ? t('galleryFolder')
+              : destination
+              ? describeFolder(destination)
+              : t('downloadFolder')}
+          </Text>
         </View>
-        <Text style={styles.formatHint}>{t(FORMAT_HINT[format])}</Text>
+        {format !== 'gallery' && (
+          <TouchableOpacity
+            onPress={handleChangeDestination}
+            disabled={saving}
+            accessibilityRole="button"
+            hitSlop={8}>
+            <Text style={styles.changeLink}>{t('change')}</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Azioni: salva oppure condividi senza salvare */}
@@ -394,29 +476,16 @@ const styles = StyleSheet.create({
     color: '#1a1a1a',
   },
   formatContainer: {paddingHorizontal: 16, paddingBottom: 12},
-  segmented: {
+  destinationRow: {
     flexDirection: 'row',
-    backgroundColor: '#f0f0f0',
-    borderRadius: 10,
-    padding: 3,
-  },
-  segment: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
     alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    gap: 12,
   },
-  segmentActive: {
-    backgroundColor: '#fff',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-  },
-  segmentText: {fontSize: 14, color: '#666', fontWeight: '500'},
-  segmentTextActive: {color: '#2563eb', fontWeight: '600'},
-  formatHint: {fontSize: 12, color: '#888', marginTop: 6},
+  destinationText: {flex: 1},
+  destinationName: {fontSize: 15, color: '#1a1a1a'},
+  changeLink: {fontSize: 15, color: '#2563eb', fontWeight: '600'},
   actions: {
     flexDirection: 'row',
     gap: 12,

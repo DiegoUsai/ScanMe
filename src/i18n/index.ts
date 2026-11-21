@@ -51,8 +51,8 @@ const strings = {
     formatPdf: 'PDF',
     formatJpg: 'JPG',
     formatGallery: 'Galleria',
-    formatPdfHint: 'Un unico file con tutte le pagine, in Download/ScanMe',
-    formatJpgHint: 'Un file immagine per pagina, in Download/ScanMe',
+    formatPdfHint: 'Un unico file con tutte le pagine',
+    formatJpgHint: 'Un file immagine per pagina',
     formatGalleryHint:
       'Una foto per pagina, visibile in Galleria (Pictures/ScanMe)',
     shareWithoutSaving: 'Condividi senza salvare',
@@ -61,6 +61,23 @@ const strings = {
       'Il documento non è stato salvato sul telefono: le copie temporanee vengono cancellate quando esci.',
     keepEditing: 'Resta qui',
     done: 'Fatto',
+    whereToSave: 'Dove salvare',
+    downloadFolder: 'Telefono › Download/ScanMe',
+    galleryFolder: 'Galleria › Pictures/ScanMe',
+    chooseFolder: 'Scegli una cartella o un cloud…',
+    change: 'Cambia',
+    folderAccessLost:
+      'Non ho più accesso alla cartella scelta. Sceglila di nuovo con "Cambia" o nelle impostazioni.',
+    folderPickError: 'Impossibile usare questa cartella',
+    settings: 'Impostazioni',
+    defaultDestination: 'Destinazione predefinita',
+    defaultDestinationHint:
+      'Puoi scegliere una cartella del telefono o di un cloud (Drive, Dropbox, OneDrive…) se la sua app è installata e lo consente.',
+    useDownloadFolder: 'Usa Download/ScanMe',
+    defaultFormat: 'Formato predefinito',
+    captureMode: 'Scatto manuale o automatico',
+    captureModeHint:
+      "Si sceglie con l'interruttore in alto nella schermata dello scanner: lo scanner di Google non permette di impostarlo dall'app.",
   },
   en: {
     appName: 'ScanMe',
@@ -105,8 +122,8 @@ const strings = {
     formatPdf: 'PDF',
     formatJpg: 'JPG',
     formatGallery: 'Gallery',
-    formatPdfHint: 'One file with every page, in Download/ScanMe',
-    formatJpgHint: 'One image file per page, in Download/ScanMe',
+    formatPdfHint: 'One file with every page',
+    formatJpgHint: 'One image file per page',
     formatGalleryHint: 'One photo per page, shown in Gallery (Pictures/ScanMe)',
     shareWithoutSaving: 'Share without saving',
     sharedNotSaved: 'Shared',
@@ -114,6 +131,23 @@ const strings = {
       'The document was not saved on your phone: temporary copies are deleted when you leave.',
     keepEditing: 'Stay here',
     done: 'Done',
+    whereToSave: 'Where to save',
+    downloadFolder: 'Phone › Download/ScanMe',
+    galleryFolder: 'Gallery › Pictures/ScanMe',
+    chooseFolder: 'Choose a folder or cloud…',
+    change: 'Change',
+    folderAccessLost:
+      'ScanMe no longer has access to the chosen folder. Choose it again with "Change" or in settings.',
+    folderPickError: 'This folder cannot be used',
+    settings: 'Settings',
+    defaultDestination: 'Default destination',
+    defaultDestinationHint:
+      'You can pick a phone folder or a cloud (Drive, Dropbox, OneDrive…) if its app is installed and supports it.',
+    useDownloadFolder: 'Use Download/ScanMe',
+    defaultFormat: 'Default format',
+    captureMode: 'Manual or automatic capture',
+    captureModeHint:
+      'Use the switch at the top of the scanner screen: the Google scanner does not let apps set it.',
   },
 };
 
