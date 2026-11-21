@@ -34,6 +34,7 @@ export default function HomeScreen() {
       if (result.pages.length > 0) {
         navigation.navigate('Preview', {
           pages: result.pages,
+          pageSizes: result.pageSizes,
           pdfUri: result.pdfUri,
         });
       }

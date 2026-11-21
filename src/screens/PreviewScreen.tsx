@@ -41,8 +41,9 @@ function pageFileName(baseName: string, index: number, total: number): string {
 }
 
 export default function PreviewScreen({route, navigation}: Props) {
-  const {pages, pdfUri} = route.params;
+  const {pages, pageSizes, pdfUri} = route.params;
   const [currentPage, setCurrentPage] = useState(0);
+  const size = pageSizes?.[currentPage];
   // Larghezza dell'area di anteprima: ogni pagina del carosello la occupa tutta.
   const [pageWidth, setPageWidth] = useState(0);
   const listRef = useRef<FlatList<string>>(null);
@@ -168,9 +169,16 @@ export default function PreviewScreen({route, navigation}: Props) {
           <Text style={styles.backButton}>←</Text>
         </TouchableOpacity>
         <Text style={styles.title}>{t('preview')}</Text>
-        <Text style={styles.pageCount}>
-          {pages.length} {pages.length === 1 ? t('page') : t('pages')}
-        </Text>
+        <View style={styles.headerInfo}>
+          <Text style={styles.pageCount}>
+            {pages.length} {pages.length === 1 ? t('page') : t('pages')}
+          </Text>
+          {size?.width && size?.height ? (
+            <Text style={styles.pageSize}>
+              {size.width} × {size.height} px
+            </Text>
+          ) : null}
+        </View>
       </View>
 
       {/* Anteprima: carosello orizzontale, una pagina per schermata */}
@@ -200,6 +208,10 @@ export default function PreviewScreen({route, navigation}: Props) {
                 source={{uri: item}}
                 style={[styles.previewImage, {width: pageWidth}]}
                 resizeMode="contain"
+                // Con il valore predefinito ("auto") Android ricampiona l'immagine
+                // a una risoluzione più bassa prima di mostrarla, e l'anteprima
+                // sembra sgranata anche quando il file è nitido.
+                resizeMethod="scale"
                 accessibilityLabel={`${t('page')} ${index + 1} / ${
                   pages.length
                 }`}
@@ -296,7 +308,9 @@ const styles = StyleSheet.create({
   },
   backButton: {fontSize: 24, color: '#2563eb', paddingRight: 4},
   title: {fontSize: 20, fontWeight: '600', color: '#1a1a1a', flex: 1},
+  headerInfo: {alignItems: 'flex-end'},
   pageCount: {fontSize: 14, color: '#888'},
+  pageSize: {fontSize: 11, color: '#aaa'},
   previewContainer: {
     flex: 1,
     backgroundColor: '#f5f5f5',
