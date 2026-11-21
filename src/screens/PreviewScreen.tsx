@@ -1,4 +1,4 @@
-import React, {useState, useCallback, useRef} from 'react';
+import React, {useState, useCallback, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -19,6 +19,7 @@ import {
   saveToDevice,
   saveToGallery,
   copyToCache,
+  cleanTempFiles,
 } from '../utils/files';
 import type {RootStackParamList} from '../App';
 
@@ -39,6 +40,18 @@ export default function PreviewScreen({route, navigation}: Props) {
   const [saving, setSaving] = useState(false);
   // Il ref evita salvataggi doppi se l'utente tocca due volte prima del re-render.
   const savingRef = useRef(false);
+  // Copie create in cache per la condivisione, da eliminare all'uscita.
+  const shareCopies = useRef<string[]>([]);
+
+  // Le scansioni restano nella cache dell'app finché non vengono rimosse:
+  // uscendo dall'anteprima si cancellano pagine JPEG, PDF di ML Kit e copie
+  // di condivisione, per non lasciare documenti personali sul dispositivo.
+  useEffect(() => {
+    const copies = shareCopies.current;
+    return () => {
+      cleanTempFiles([...pages, ...(pdfUri ? [pdfUri] : []), ...copies]);
+    };
+  }, [pages, pdfUri]);
 
   /**
    * Esegue un'operazione di salvataggio mostrando l'esito all'utente.
@@ -99,6 +112,7 @@ export default function PreviewScreen({route, navigation}: Props) {
     const mimeType = isPdf ? 'application/pdf' : 'image/jpeg';
     try {
       const cachePath = await copyToCache(uri, shareName);
+      shareCopies.current.push(cachePath);
       await Share.open({
         url: `file://${cachePath}`,
         type: mimeType,
