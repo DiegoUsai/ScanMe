@@ -127,6 +127,10 @@ dependencies {
     // vengono scaricati da Google Play services: l'elaborazione resta sul dispositivo.
     implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
 
+    // PdfBox-Android (Apache 2.0): copia le pagine di un PDF esistente senza
+    // ridisegnarle, per aggiungere, togliere o sostituire pagine.
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {

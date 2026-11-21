@@ -18,6 +18,7 @@ import {loadRecents, removeRecent} from '../recents/recents';
 import type {RecentFile} from '../recents/recents';
 import {fileExists, openFile} from '../native/StorageAccess';
 import {useSettings} from '../settings/SettingsContext';
+import {pickPdf, loadPdf, PdfErrorCode} from '../native/PdfEditor';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {scan, getErrorCode, ScanErrorCode} from '../native/DocumentScanner';
 import {t} from '../i18n';
@@ -76,28 +77,60 @@ export default function HomeScreen() {
     [missing],
   );
 
+  /** Apre l'editor su un PDF scelto ora o già presente negli ultimi file. */
+  const openEditor = useCallback(
+    async (uri?: string) => {
+      try {
+        const pdf = uri ? await loadPdf(uri) : await pickPdf();
+        navigation.navigate('EditPdf', {pdf});
+      } catch (error: unknown) {
+        const code = getErrorCode(error);
+        if (code === PdfErrorCode.Cancelled) {
+          return;
+        }
+        Alert.alert(
+          t('error'),
+          code === PdfErrorCode.Protected
+            ? t('pdfProtected')
+            : t('pdfOpenError'),
+        );
+      }
+    },
+    [navigation],
+  );
+
   const handleMore = useCallback(
     (item: RecentFile) => {
-      Alert.alert(item.name, item.destination, [
-        {text: t('cancel'), style: 'cancel'},
-        {
-          text: t('removeFromList'),
-          onPress: async () => setRecents(await removeRecent(item.id)),
-        },
-        ...(missing.has(item.id)
-          ? []
-          : [
-              {
-                text: t('share'),
-                onPress: () =>
-                  Share.open({url: item.uri, type: item.mimeType}).catch(
-                    () => undefined,
-                  ),
-              },
-            ]),
-      ]);
+      // Android mostra al massimo tre pulsanti: niente "Annulla", si chiude
+      // toccando fuori dalla finestra.
+      const isPdf = item.mimeType === 'application/pdf';
+      Alert.alert(
+        item.name,
+        item.destination,
+        [
+          ...(isPdf && !missing.has(item.id)
+            ? [{text: t('editPages'), onPress: () => openEditor(item.uri)}]
+            : [{text: t('cancel'), style: 'cancel' as const}]),
+          {
+            text: t('removeFromList'),
+            onPress: async () => setRecents(await removeRecent(item.id)),
+          },
+          ...(missing.has(item.id)
+            ? []
+            : [
+                {
+                  text: t('share'),
+                  onPress: () =>
+                    Share.open({url: item.uri, type: item.mimeType}).catch(
+                      () => undefined,
+                    ),
+                },
+              ]),
+        ],
+        {cancelable: true},
+      );
     },
-    [missing],
+    [missing, openEditor],
   );
   // Il ref blocca i doppi tap prima che lo stato `scanning` venga aggiornato.
   const scanningRef = useRef(false);
@@ -234,6 +267,13 @@ export default function HomeScreen() {
       )}
       <View style={styles.footer}>
         <TouchableOpacity
+          style={styles.editButton}
+          onPress={() => openEditor()}
+          disabled={scanning}
+          accessibilityRole="button">
+          <Text style={styles.editButtonText}>{t('editPdf')}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           style={styles.scanButton}
           onPress={handleScan}
           activeOpacity={0.8}
@@ -313,6 +353,12 @@ const styles = StyleSheet.create({
     paddingBottom: 36,
     alignItems: 'center',
   },
+  editButton: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    marginBottom: 12,
+  },
+  editButtonText: {color: '#2563eb', fontSize: 16, fontWeight: '600'},
   scanButton: {
     backgroundColor: '#2563eb',
     paddingHorizontal: 48,
