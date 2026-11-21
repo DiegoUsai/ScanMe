@@ -45,6 +45,16 @@ export default function App() {
               component={SettingsScreen}
               options={{animation: 'slide_from_right'}}
             />
+            <Stack.Screen
+              name="Projects"
+              component={ProjectsScreen}
+              options={{animation: 'slide_from_right'}}
+            />
+            <Stack.Screen
+              name="EditPdf"
+              component={EditPdfScreen}
+              options={{animation: 'slide_from_right'}}
+            />
           </Stack.Navigator>
         </NavigationContainer>
       </SettingsProvider>
