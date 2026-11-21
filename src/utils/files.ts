@@ -73,11 +73,12 @@ async function copyToMediaStore(
   fileName: string,
   mimeType: string,
   target: MediaStoreTarget,
+  subFolder?: string,
 ): Promise<string> {
   await ensureLegacyWritePermission();
   const file: MediaStoreFile = {
     name: fileName,
-    parentFolder: APP_FOLDER,
+    parentFolder: subFolder ? `${APP_FOLDER}/${subFolder}` : APP_FOLDER,
     mimeType,
   };
   return ReactNativeBlobUtil.MediaCollection.copyToMediaStore(
@@ -90,7 +91,7 @@ async function copyToMediaStore(
 }
 
 /**
- * Salva il file in Download/ScanMe tramite MediaStore.
+ * Salva il file in Download/ScanMe (o Download/ScanMe/<subFolder>) tramite MediaStore.
  * Restituisce l'URI del file creato. Se esiste già un file con lo stesso
  * nome, Android ne crea uno nuovo con un suffisso invece di sovrascriverlo.
  */
@@ -98,16 +99,24 @@ export async function saveToDevice(
   sourceUri: string,
   fileName: string,
   mimeType: string,
+  subFolder?: string,
 ): Promise<string> {
-  return copyToMediaStore(sourceUri, fileName, mimeType, 'Download');
+  return copyToMediaStore(sourceUri, fileName, mimeType, 'Download', subFolder);
 }
 
-/** Salva un'immagine JPEG in Pictures/ScanMe, così compare nella galleria. */
+/** Salva un'immagine JPEG in Pictures/ScanMe (o una sua sottocartella), così compare nella galleria. */
 export async function saveToGallery(
   sourceUri: string,
   fileName: string,
+  subFolder?: string,
 ): Promise<string> {
-  return copyToMediaStore(sourceUri, `${fileName}.jpg`, 'image/jpeg', 'Image');
+  return copyToMediaStore(
+    sourceUri,
+    `${fileName}.jpg`,
+    'image/jpeg',
+    'Image',
+    subFolder,
+  );
 }
 
 /** Copia il file nella cache dell'app (sovrascrivendo l'eventuale copia precedente). */

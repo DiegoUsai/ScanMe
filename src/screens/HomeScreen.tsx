@@ -1,7 +1,9 @@
 import React, {useState, useCallback, useRef} from 'react';
-import {FlatList, Image} from 'react-native';
 import {
   View,
+  FlatList,
+  Image,
+  ScrollView,
   Text,
   StyleSheet,
   TouchableOpacity,
@@ -15,6 +17,7 @@ import Share from 'react-native-share';
 import {loadRecents, removeRecent} from '../recents/recents';
 import type {RecentFile} from '../recents/recents';
 import {fileExists, openFile} from '../native/StorageAccess';
+import {useSettings} from '../settings/SettingsContext';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {scan, getErrorCode, ScanErrorCode} from '../native/DocumentScanner';
 import {t} from '../i18n';
@@ -26,6 +29,15 @@ export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const [scanning, setScanning] = useState(false);
   const [recents, setRecents] = useState<RecentFile[]>([]);
+  const {settings} = useSettings();
+  // Filtro per progetto: undefined = tutti i file.
+  const [filter, setFilter] = useState<string | undefined>(undefined);
+  const activeFilter = settings.projects.some(p => p.id === filter)
+    ? filter
+    : undefined;
+  const visibleRecents = activeFilter
+    ? recents.filter(r => r.projectId === activeFilter)
+    : recents;
   // id dei file che non esistono più nella destinazione (cancellati o spostati).
   const [missing, setMissing] = useState<Set<string>>(new Set());
 
@@ -103,6 +115,7 @@ export default function HomeScreen() {
           pages: result.pages,
           pageSizes: result.pageSizes,
           pdfUri: result.pdfUri,
+          projectId: activeFilter,
         });
       }
     } catch (error: unknown) {
@@ -116,7 +129,7 @@ export default function HomeScreen() {
       scanningRef.current = false;
       setScanning(false);
     }
-  }, [navigation]);
+  }, [navigation, activeFilter]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -138,10 +151,41 @@ export default function HomeScreen() {
       ) : (
         <FlatList
           style={styles.list}
-          data={recents}
+          data={visibleRecents}
           keyExtractor={item => item.id}
           ListHeaderComponent={
-            <Text style={styles.sectionTitle}>{t('recentScans')}</Text>
+            <View>
+              <Text style={styles.sectionTitle}>{t('recentScans')}</Text>
+              {settings.projects.length > 0 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.chips}>
+                  {[undefined, ...settings.projects].map(p => {
+                    const selected = p?.id === activeFilter;
+                    return (
+                      <TouchableOpacity
+                        key={p?.id ?? 'all'}
+                        style={[styles.chip, selected && styles.chipActive]}
+                        onPress={() => setFilter(p?.id)}
+                        accessibilityRole="radio"
+                        accessibilityState={{checked: selected}}>
+                        <Text
+                          style={[
+                            styles.chipText,
+                            selected && styles.chipTextActive,
+                          ]}>
+                          {p ? p.name : t('allFiles')}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
+          }
+          ListEmptyComponent={
+            <Text style={styles.emptyFilter}>{t('noScansInProject')}</Text>
           }
           renderItem={({item}) => (
             <TouchableOpacity
@@ -224,6 +268,17 @@ const styles = StyleSheet.create({
   settingsIcon: {fontSize: 26, color: '#555'},
   body: {flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40},
   list: {flex: 1},
+  chips: {gap: 8, paddingHorizontal: 20, paddingBottom: 8},
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: '#f0f0f0',
+  },
+  chipActive: {backgroundColor: '#2563eb'},
+  chipText: {fontSize: 14, color: '#444'},
+  chipTextActive: {color: '#fff', fontWeight: '600'},
+  emptyFilter: {textAlign: 'center', color: '#888', padding: 32},
   sectionTitle: {
     fontSize: 13,
     fontWeight: '600',

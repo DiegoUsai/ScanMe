@@ -5,6 +5,7 @@ import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import HomeScreen from './screens/HomeScreen';
 import PreviewScreen from './screens/PreviewScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import ProjectsScreen from './screens/ProjectsScreen';
 import {SettingsProvider} from './settings/SettingsContext';
 
 export type RootStackParamList = {
@@ -13,8 +14,11 @@ export type RootStackParamList = {
     pages: string[];
     pageSizes?: Array<{width?: number; height?: number}>;
     pdfUri?: string;
+    /** Progetto da proporre, se la home è filtrata su un progetto. */
+    projectId?: string;
   };
   Settings: undefined;
+  Projects: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();

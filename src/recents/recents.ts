@@ -14,6 +14,8 @@ export interface RecentFile {
   savedAt: number;
   /** Dove è stato salvato, come lo mostra l'interfaccia. */
   destination: string;
+  /** Progetto a cui appartiene, se scelto al salvataggio. */
+  projectId?: string;
   /** Percorso della miniatura nella memoria privata dell'app. */
   thumbnail?: string;
 }

@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   FlatList,
+  ScrollView,
   TextInput,
   Alert,
 } from 'react-native';
@@ -41,6 +42,11 @@ import {
 import type {FolderDestination} from '../native/StorageAccess';
 import {getErrorCode} from '../native/DocumentScanner';
 import {addRecent} from '../recents/recents';
+import {
+  findProject,
+  projectFolderName,
+  resolveDestination,
+} from '../settings/projects';
 import type {RootStackParamList} from '../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Preview'>;
@@ -54,7 +60,7 @@ function pageFileName(baseName: string, index: number, total: number): string {
 }
 
 export default function PreviewScreen({route, navigation}: Props) {
-  const {pages, pageSizes, pdfUri} = route.params;
+  const {pages, pageSizes, pdfUri, projectId: initialProjectId} = route.params;
   const [currentPage, setCurrentPage] = useState(0);
   const size = pageSizes?.[currentPage];
   // Larghezza dell'area di anteprima: ogni pagina del carosello la occupa tutta.
@@ -69,6 +75,11 @@ export default function PreviewScreen({route, navigation}: Props) {
       ? 'jpg'
       : settings.defaultFormat,
   );
+  // Progetto del salvataggio: se la home è filtrata su un progetto, parte da quello.
+  const [projectId, setProjectId] = useState<string | undefined>(
+    findProject(settings, initialProjectId)?.id,
+  );
+  const project = findProject(settings, projectId);
   // Destinazione di questo salvataggio: parte da quella predefinita e si può
   // cambiare qui senza toccare le impostazioni. undefined = Download/ScanMe.
   const [destination, setDestination] = useState<FolderDestination | undefined>(
@@ -141,6 +152,12 @@ export default function PreviewScreen({route, navigation}: Props) {
       let savedUri: string;
       let mimeType = 'image/jpeg';
       let where: string;
+      // Con un progetto i file vanno nella sua sottocartella, dentro la sua
+      // destinazione: tutti i file di un progetto stanno nello stesso posto.
+      const subFolder = project ? projectFolderName(project) : undefined;
+      const target = project
+        ? resolveDestination(project, settings.destination)
+        : destination;
       if (format === 'gallery') {
         const uris: string[] = [];
         for (let i = 0; i < pages.length; i++) {
@@ -148,23 +165,36 @@ export default function PreviewScreen({route, navigation}: Props) {
             await saveToGallery(
               pages[i],
               pageFileName(baseName, i, pages.length),
+              subFolder,
             ),
           );
         }
         savedUri = uris[0];
         where = t('galleryFolder');
+        if (subFolder) {
+          where = `${where} › ${subFolder}`;
+        }
       } else {
-        if (destination && !(await hasAccess(destination.uri))) {
+        if (target && !(await hasAccess(target.uri))) {
           throw Object.assign(new Error('Folder access lost'), {
             code: StorageErrorCode.PermissionDenied,
           });
         }
         // Salva un file nella cartella scelta (SAF) o, senza cartella, in Download/ScanMe.
         const write = (source: string, name: string, mime: string) =>
-          destination
-            ? saveToFolder(destination, [], name, mime, source)
-            : saveToDevice(source, name, mime);
-        where = destination ? describeFolder(destination) : t('downloadFolder');
+          target
+            ? saveToFolder(
+                target,
+                subFolder ? [subFolder] : [],
+                name,
+                mime,
+                source,
+              )
+            : saveToDevice(source, name, mime, subFolder);
+        where = target ? describeFolder(target) : t('downloadFolder');
+        if (subFolder) {
+          where = `${where} › ${subFolder}`;
+        }
         if (format === 'pdf' && pdfUri) {
           mimeType = 'application/pdf';
           savedUri = await write(pdfUri, `${baseName}.pdf`, mimeType);
@@ -189,6 +219,7 @@ export default function PreviewScreen({route, navigation}: Props) {
             mimeType,
             pageCount: pages.length,
             destination: where,
+            projectId: project?.id,
           },
           pages[0],
         );
@@ -196,7 +227,15 @@ export default function PreviewScreen({route, navigation}: Props) {
         // Ignorato.
       }
     });
-  }, [destination, format, pages, pdfUri, runSave]);
+  }, [
+    destination,
+    format,
+    pages,
+    pdfUri,
+    project,
+    settings.destination,
+    runSave,
+  ]);
 
   /** Cambia la destinazione solo per questo salvataggio. */
   const handleChangeDestination = useCallback(() => {
@@ -272,6 +311,17 @@ export default function PreviewScreen({route, navigation}: Props) {
       }
     }
   }, [fileName, format, pages, pdfUri, navigation]);
+
+  const destinationLabel = (() => {
+    const sub = project ? ` › ${projectFolderName(project)}` : '';
+    if (format === 'gallery') {
+      return `${t('galleryFolder')}${sub}`;
+    }
+    const target = project
+      ? resolveDestination(project, settings.destination)
+      : destination;
+    return `${target ? describeFolder(target) : t('downloadFolder')}${sub}`;
+  })();
 
   const handlePreviewLayout = useCallback((e: LayoutChangeEvent) => {
     setPageWidth(e.nativeEvent.layout.width);
@@ -402,19 +452,49 @@ export default function PreviewScreen({route, navigation}: Props) {
         />
       </View>
 
-      {/* Destinazione: la Galleria ha una posizione fissa */}
+      {/* Progetto: solo se l'utente ne ha creati */}
+      {settings.projects.length > 0 && (
+        <View style={styles.projectContainer}>
+          <Text style={[styles.label, styles.projectLabel]}>
+            {t('project')}
+          </Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chips}>
+            {[undefined, ...settings.projects].map(p => {
+              const selected = p?.id === projectId;
+              return (
+                <TouchableOpacity
+                  key={p?.id ?? 'none'}
+                  style={[styles.chip, selected && styles.chipActive]}
+                  onPress={() => setProjectId(p?.id)}
+                  disabled={saving}
+                  accessibilityRole="radio"
+                  accessibilityState={{checked: selected}}>
+                  <Text
+                    style={[
+                      styles.chipText,
+                      selected && styles.chipTextActive,
+                    ]}>
+                    {p ? p.name : t('noProject')}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Destinazione: la Galleria ha una posizione fissa, un progetto la sua */}
       <View style={styles.destinationRow}>
         <View style={styles.destinationText}>
           <Text style={styles.label}>{t('whereToSave')}</Text>
           <Text style={styles.destinationName} numberOfLines={1}>
-            {format === 'gallery'
-              ? t('galleryFolder')
-              : destination
-              ? describeFolder(destination)
-              : t('downloadFolder')}
+            {destinationLabel}
           </Text>
         </View>
-        {format !== 'gallery' && (
+        {format !== 'gallery' && !project && (
           <TouchableOpacity
             onPress={handleChangeDestination}
             disabled={saving}
@@ -507,6 +587,18 @@ const styles = StyleSheet.create({
     color: '#1a1a1a',
   },
   formatContainer: {paddingHorizontal: 16, paddingBottom: 12},
+  projectContainer: {paddingBottom: 12},
+  projectLabel: {paddingHorizontal: 16},
+  chips: {gap: 8, paddingHorizontal: 16},
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: '#f0f0f0',
+  },
+  chipActive: {backgroundColor: '#2563eb'},
+  chipText: {fontSize: 14, color: '#444'},
+  chipTextActive: {color: '#fff', fontWeight: '600'},
   destinationRow: {
     flexDirection: 'row',
     alignItems: 'center',
