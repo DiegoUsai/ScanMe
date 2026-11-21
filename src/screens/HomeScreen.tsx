@@ -170,6 +170,14 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>{t('appName')}</Text>
         <TouchableOpacity
+          style={styles.headerButton}
+          onPress={() => navigation.navigate('Projects')}
+          accessibilityRole="button"
+          accessibilityLabel={t('projects')}
+          hitSlop={8}>
+          <Text style={styles.headerButtonText}>📁 {t('projects')}</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
           onPress={() => navigation.navigate('Settings')}
           accessibilityRole="button"
           accessibilityLabel={t('settings')}
@@ -304,7 +312,15 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#e0e0e0',
   },
-  title: {fontSize: 28, fontWeight: '700', color: '#1a1a1a'},
+  title: {fontSize: 28, fontWeight: '700', color: '#1a1a1a', flex: 1},
+  headerButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: '#eef2ff',
+    marginRight: 12,
+  },
+  headerButtonText: {color: '#2563eb', fontWeight: '600', fontSize: 14},
   settingsIcon: {fontSize: 26, color: '#555'},
   body: {flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40},
   list: {flex: 1},
