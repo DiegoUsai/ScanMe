@@ -6,6 +6,8 @@ import HomeScreen from './screens/HomeScreen';
 import PreviewScreen from './screens/PreviewScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import ProjectsScreen from './screens/ProjectsScreen';
+import EditPdfScreen from './screens/EditPdfScreen';
+import type {OpenedPdf} from './native/PdfEditor';
 import {SettingsProvider} from './settings/SettingsContext';
 
 export type RootStackParamList = {
@@ -19,6 +21,7 @@ export type RootStackParamList = {
   };
   Settings: undefined;
   Projects: undefined;
+  EditPdf: {pdf: OpenedPdf};
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();

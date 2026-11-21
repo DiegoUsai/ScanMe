@@ -7,7 +7,11 @@ import com.facebook.react.uimanager.ViewManager
 
 class DocumentScannerPackage : ReactPackage {
     override fun createNativeModules(reactContext: ReactApplicationContext): List<NativeModule> =
-        listOf(DocumentScannerModule(reactContext), StorageAccessModule(reactContext))
+        listOf(
+            DocumentScannerModule(reactContext),
+            StorageAccessModule(reactContext),
+            PdfEditorModule(reactContext),
+        )
 
     override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =
         emptyList()

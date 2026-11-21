@@ -8,3 +8,6 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+
+# PdfBox-Android: il decoder JPEG 2000 è opzionale e non incluso.
+-dontwarn com.gemalto.jp2.**
