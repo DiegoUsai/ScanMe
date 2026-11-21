@@ -452,39 +452,39 @@ export default function PreviewScreen({route, navigation}: Props) {
         />
       </View>
 
-      {/* Progetto: solo se l'utente ne ha creati */}
-      {settings.projects.length > 0 && (
-        <View style={styles.projectContainer}>
-          <Text style={[styles.label, styles.projectLabel]}>
-            {t('project')}
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chips}>
-            {[undefined, ...settings.projects].map(p => {
-              const selected = p?.id === projectId;
-              return (
-                <TouchableOpacity
-                  key={p?.id ?? 'none'}
-                  style={[styles.chip, selected && styles.chipActive]}
-                  onPress={() => setProjectId(p?.id)}
-                  disabled={saving}
-                  accessibilityRole="radio"
-                  accessibilityState={{checked: selected}}>
-                  <Text
-                    style={[
-                      styles.chipText,
-                      selected && styles.chipTextActive,
-                    ]}>
-                    {p ? p.name : t('noProject')}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-      )}
+      {/* Progetto: sempre visibile, con la scorciatoia per crearne uno */}
+      <View style={styles.projectContainer}>
+        <Text style={[styles.label, styles.projectLabel]}>{t('project')}</Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chips}>
+          {[undefined, ...settings.projects].map(p => {
+            const selected = p?.id === projectId;
+            return (
+              <TouchableOpacity
+                key={p?.id ?? 'none'}
+                style={[styles.chip, selected && styles.chipActive]}
+                onPress={() => setProjectId(p?.id)}
+                disabled={saving}
+                accessibilityRole="radio"
+                accessibilityState={{checked: selected}}>
+                <Text
+                  style={[styles.chipText, selected && styles.chipTextActive]}>
+                  {p ? p.name : t('noProject')}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+          <TouchableOpacity
+            style={[styles.chip, styles.chipAdd]}
+            onPress={() => navigation.navigate('Projects')}
+            disabled={saving}
+            accessibilityRole="button">
+            <Text style={styles.chipAddText}>{t('newProject')}</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
 
       {/* Destinazione: la Galleria ha una posizione fissa, un progetto la sua */}
       <View style={styles.destinationRow}>
@@ -597,6 +597,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#f0f0f0',
   },
   chipActive: {backgroundColor: '#2563eb'},
+  chipAdd: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#2563eb',
+    borderStyle: 'dashed',
+  },
+  chipAddText: {fontSize: 14, color: '#2563eb', fontWeight: '600'},
   chipText: {fontSize: 14, color: '#444'},
   chipTextActive: {color: '#fff', fontWeight: '600'},
   destinationRow: {
