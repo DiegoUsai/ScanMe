@@ -2,7 +2,7 @@ package com.scanmeapp
 
 import android.app.Activity
 import android.content.Intent
-import android.net.Uri
+import android.content.IntentSender
 import com.facebook.react.bridge.*
 import com.facebook.react.module.annotations.ReactModule
 import com.google.mlkit.vision.documentscanner.GmsDocumentScanning
@@ -28,12 +28,18 @@ class DocumentScannerModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun scan(pageLimit: Int, promise: Promise) {
-        val activity = currentActivity
+        val activity = reactApplicationContext.currentActivity
         if (activity == null) {
             promise.reject("NO_ACTIVITY", "No activity available")
             return
         }
 
+        // Una sola scansione alla volta: senza questo controllo la promise
+        // precedente verrebbe sovrascritta e resterebbe pendente per sempre.
+        if (scanPromise != null) {
+            promise.reject("SCAN_IN_PROGRESS", "A scan is already in progress")
+            return
+        }
         scanPromise = promise
 
         val options = GmsDocumentScannerOptions.Builder()
@@ -51,17 +57,25 @@ class DocumentScannerModule(reactContext: ReactApplicationContext) :
         val scanner = GmsDocumentScanning.getClient(options.build())
         scanner.getStartScanIntent(activity)
             .addOnSuccessListener { intentSender ->
-                activity.startIntentSenderForResult(
-                    intentSender, REQUEST_CODE_SCAN, null, 0, 0, 0
-                )
+                try {
+                    activity.startIntentSenderForResult(
+                        intentSender, REQUEST_CODE_SCAN, null, 0, 0, 0
+                    )
+                } catch (e: IntentSender.SendIntentException) {
+                    rejectPending("SCAN_INIT_ERROR", e.message)
+                }
             }
             .addOnFailureListener { e ->
-                scanPromise?.reject("SCAN_INIT_ERROR", e.message)
-                scanPromise = null
+                rejectPending("SCAN_INIT_ERROR", e.message)
             }
     }
 
-    override fun onActivityResult(activity: Activity?, requestCode: Int, resultCode: Int, data: Intent?) {
+    private fun rejectPending(code: String, message: String?) {
+        scanPromise?.reject(code, message ?: "Unknown scanner error")
+        scanPromise = null
+    }
+
+    override fun onActivityResult(activity: Activity, requestCode: Int, resultCode: Int, data: Intent?) {
         if (requestCode != REQUEST_CODE_SCAN) return
 
         val promise = scanPromise ?: return
@@ -96,5 +110,5 @@ class DocumentScannerModule(reactContext: ReactApplicationContext) :
         promise.resolve(response)
     }
 
-    override fun onNewIntent(intent: Intent?) {}
+    override fun onNewIntent(intent: Intent) = Unit
 }
