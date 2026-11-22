@@ -44,6 +44,7 @@ import {addRecent} from '../recents/recents';
 import {
   findProject,
   projectFolderName,
+  projectSubFolders,
   resolveDestination,
 } from '../settings/projects';
 import type {RootStackParamList} from '../App';
@@ -152,9 +153,11 @@ export default function PreviewScreen({route, navigation}: Props) {
       let allUris: string[] = [];
       let mimeType = 'image/jpeg';
       let where: string;
-      // Con un progetto i file vanno nella sua sottocartella, dentro la sua
-      // destinazione: tutti i file di un progetto stanno nello stesso posto.
-      const subFolder = project ? projectFolderName(project) : undefined;
+      // Con un progetto i file vanno nella sua posizione: una sottocartella
+      // con il suo nome, oppure direttamente la cartella scelta per il progetto.
+      // In galleria si usa sempre la sottocartella (Pictures/ScanMe/<nome>).
+      const gallerySub = project ? projectFolderName(project) : undefined;
+      const subFolders = projectSubFolders(project);
       const target = project
         ? resolveDestination(project, settings.destination)
         : destination;
@@ -165,15 +168,15 @@ export default function PreviewScreen({route, navigation}: Props) {
             await saveToGallery(
               pages[i],
               pageFileName(baseName, i, pages.length),
-              subFolder,
+              gallerySub,
             ),
           );
         }
         savedUri = uris[0];
         allUris = uris;
         where = t('galleryFolder');
-        if (subFolder) {
-          where = `${where} › ${subFolder}`;
+        if (gallerySub) {
+          where = `${where} › ${gallerySub}`;
         }
       } else {
         if (target && !(await hasAccess(target.uri))) {
@@ -184,18 +187,12 @@ export default function PreviewScreen({route, navigation}: Props) {
         // Salva un file nella cartella scelta (SAF) o, senza cartella, in Download/ScanMe.
         const write = (source: string, name: string, mime: string) =>
           target
-            ? saveToFolder(
-                target,
-                subFolder ? [subFolder] : [],
-                name,
-                mime,
-                source,
-              )
-            : saveToDevice(source, name, mime, subFolder);
-        where = target ? describeFolder(target) : t('downloadFolder');
-        if (subFolder) {
-          where = `${where} › ${subFolder}`;
-        }
+            ? saveToFolder(target, subFolders, name, mime, source)
+            : saveToDevice(source, name, mime, subFolders[0]);
+        where = [
+          target ? describeFolder(target) : t('downloadFolder'),
+          ...subFolders,
+        ].join(' › ');
         if (format === 'pdf' && pdfUri) {
           mimeType = 'application/pdf';
           savedUri = await write(pdfUri, `${baseName}.pdf`, mimeType);
@@ -316,14 +313,17 @@ export default function PreviewScreen({route, navigation}: Props) {
   }, [fileName, format, pages, pdfUri, navigation]);
 
   const destinationLabel = (() => {
-    const sub = project ? ` › ${projectFolderName(project)}` : '';
     if (format === 'gallery') {
+      const sub = project ? ` › ${projectFolderName(project)}` : '';
       return `${t('galleryFolder')}${sub}`;
     }
     const target = project
       ? resolveDestination(project, settings.destination)
       : destination;
-    return `${target ? describeFolder(target) : t('downloadFolder')}${sub}`;
+    return [
+      target ? describeFolder(target) : t('downloadFolder'),
+      ...projectSubFolders(project),
+    ].join(' › ');
   })();
 
   const handlePreviewLayout = useCallback((e: LayoutChangeEvent) => {

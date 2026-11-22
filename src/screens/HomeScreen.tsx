@@ -1,7 +1,6 @@
 import React, {useState, useCallback, useRef} from 'react';
 import {
   View,
-  FlatList,
   Image,
   Text,
   StyleSheet,
@@ -9,189 +8,51 @@ import {
   Alert,
   StatusBar,
   ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {useNavigation, useFocusEffect} from '@react-navigation/native';
-import Share from 'react-native-share';
-import {loadRecents, removeRecent, updateRecent} from '../recents/recents';
-import {moveRecent, needsMove, describeLocation} from '../recents/move';
-import ActionSheet from '../components/ActionSheet';
-import type {SheetOption} from '../components/ActionSheet';
-import type {Project} from '../settings/settings';
-import type {RecentFile} from '../recents/recents';
-import {fileExists, openFile, StorageErrorCode} from '../native/StorageAccess';
-import {useSettings} from '../settings/SettingsContext';
-import {pickPdf, loadPdf, PdfErrorCode} from '../native/PdfEditor';
+import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import {useRecents} from '../recents/useRecents';
+import {useSettings} from '../settings/SettingsContext';
+import {pickPdf, PdfErrorCode} from '../native/PdfEditor';
 import {scan, getErrorCode, ScanErrorCode} from '../native/DocumentScanner';
-import {t} from '../i18n';
+import {t, LOCALE} from '../i18n';
 import type {RootStackParamList} from '../App';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Home'>;
 
+/** Quanti file recenti mostrare in home; gli altri sono nella schermata File. */
+const HOME_RECENTS = 3;
+
+/**
+ * Home: la scansione è l'azione principale, la modifica di un PDF la seconda.
+ * Gli ultimi file restano a portata di mano, l'elenco completo è in "File".
+ */
 export default function HomeScreen() {
   const navigation = useNavigation<Nav>();
   const [scanning, setScanning] = useState(false);
-  const [recents, setRecents] = useState<RecentFile[]>([]);
+  const {recents, missing, open} = useRecents();
   const {settings} = useSettings();
-  // Filtro per progetto: undefined = tutti i file.
-  const [filter, setFilter] = useState<string | undefined>(undefined);
-  const activeFilter = settings.projects.some(p => p.id === filter)
-    ? filter
-    : undefined;
-  const visibleRecents = activeFilter
-    ? recents.filter(r => r.projectId === activeFilter)
-    : recents;
-  // id dei file che non esistono più nella destinazione (cancellati o spostati).
-  const [missing, setMissing] = useState<Set<string>>(new Set());
+  const projectName = (id?: string) =>
+    settings.projects.find(p => p.id === id)?.name;
 
-  // Ricarica l'elenco ogni volta che si torna in home (es. dopo un salvataggio).
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      loadRecents().then(async list => {
-        if (!active) {
-          return;
-        }
-        setRecents(list);
-        const checks = await Promise.all(list.map(r => fileExists(r.uri)));
-        if (active) {
-          setMissing(new Set(list.filter((_, i) => !checks[i]).map(r => r.id)));
-        }
-      });
-      return () => {
-        active = false;
-      };
-    }, []),
-  );
-
-  const handleOpen = useCallback(
-    async (item: RecentFile) => {
-      if (missing.has(item.id)) {
-        Alert.alert(t('fileMissing'), t('fileMissingHint'));
+  /** Apre l'editor su un PDF scelto ora. */
+  const openEditor = useCallback(async () => {
+    try {
+      navigation.navigate('EditPdf', {pdf: await pickPdf()});
+    } catch (error: unknown) {
+      const code = getErrorCode(error);
+      if (code === PdfErrorCode.Cancelled) {
         return;
       }
-      try {
-        await openFile(item.uri, item.mimeType);
-      } catch {
-        Alert.alert(t('error'), t('openError'));
-      }
-    },
-    [missing],
-  );
+      Alert.alert(
+        t('error'),
+        code === PdfErrorCode.Protected ? t('pdfProtected') : t('pdfOpenError'),
+      );
+    }
+  }, [navigation]);
 
-  /** Apre l'editor su un PDF scelto ora o già presente negli ultimi file. */
-  const openEditor = useCallback(
-    async (uri?: string) => {
-      try {
-        const pdf = uri ? await loadPdf(uri) : await pickPdf();
-        navigation.navigate('EditPdf', {pdf});
-      } catch (error: unknown) {
-        const code = getErrorCode(error);
-        if (code === PdfErrorCode.Cancelled) {
-          return;
-        }
-        Alert.alert(
-          t('error'),
-          code === PdfErrorCode.Protected
-            ? t('pdfProtected')
-            : t('pdfOpenError'),
-        );
-      }
-    },
-    [navigation],
-  );
-
-  const [sheet, setSheet] = useState<{
-    title: string;
-    subtitle?: string;
-    options: SheetOption[];
-  } | null>(null);
-  const [moving, setMoving] = useState(false);
-  const projectName = (item: RecentFile) =>
-    settings.projects.find(p => p.id === item.projectId)?.name;
-
-  /** Sposta il file nella posizione del progetto scelto: è il progetto che comanda. */
-  const moveTo = useCallback(
-    async (item: RecentFile, target: Project | undefined) => {
-      const from = settings.projects.find(p => p.id === item.projectId);
-      if (!needsMove(item, from, target, settings)) {
-        return;
-      }
-      setMoving(true);
-      try {
-        const {entry, originalRemoved} = await moveRecent(
-          item,
-          target,
-          settings,
-        );
-        setRecents(await updateRecent(entry));
-        if (!originalRemoved) {
-          Alert.alert(t('movedCopyOnly'), t('movedCopyOnlyHint'));
-        }
-      } catch (error: unknown) {
-        Alert.alert(
-          t('error'),
-          getErrorCode(error) === StorageErrorCode.PermissionDenied
-            ? t('folderAccessLost')
-            : t('moveError'),
-        );
-      } finally {
-        setMoving(false);
-      }
-    },
-    [settings],
-  );
-
-  const chooseProject = useCallback(
-    (item: RecentFile) => {
-      setSheet({
-        title: t('moveToProject'),
-        subtitle: t('moveToProjectHint'),
-        options: [undefined, ...settings.projects].map(p => ({
-          label: p ? p.name : t('noProject'),
-          detail: describeLocation(p, settings),
-          selected: (p?.id ?? undefined) === (item.projectId ?? undefined),
-          onPress: () => moveTo(item, p),
-        })),
-      });
-    },
-    [settings, moveTo],
-  );
-
-  const handleMore = useCallback(
-    (item: RecentFile) => {
-      const isMissing = missing.has(item.id);
-      const isPdf = item.mimeType === 'application/pdf';
-      const options: SheetOption[] = [];
-      if (!isMissing) {
-        options.push({
-          label: t('moveToProject'),
-          onPress: () => chooseProject(item),
-        });
-        if (isPdf) {
-          options.push({
-            label: t('editPages'),
-            onPress: () => openEditor(item.uri),
-          });
-        }
-        options.push({
-          label: t('share'),
-          onPress: () =>
-            Share.open({url: item.uri, type: item.mimeType}).catch(
-              () => undefined,
-            ),
-        });
-      }
-      options.push({
-        label: t('removeFromList'),
-        destructive: true,
-        onPress: async () => setRecents(await removeRecent(item.id)),
-      });
-      setSheet({title: item.name, subtitle: item.destination, options});
-    },
-    [missing, openEditor, chooseProject],
-  );
   // Il ref blocca i doppi tap prima che lo stato `scanning` venga aggiornato.
   const scanningRef = useRef(false);
 
@@ -208,7 +69,6 @@ export default function HomeScreen() {
           pages: result.pages,
           pageSizes: result.pageSizes,
           pdfUri: result.pdfUri,
-          projectId: activeFilter,
         });
       }
     } catch (error: unknown) {
@@ -222,7 +82,7 @@ export default function HomeScreen() {
       scanningRef.current = false;
       setScanning(false);
     }
-  }, [navigation, activeFilter]);
+  }, [navigation]);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -230,66 +90,63 @@ export default function HomeScreen() {
       <View style={styles.header}>
         <Text style={styles.title}>{t('appName')}</Text>
         <TouchableOpacity
-          style={styles.headerButton}
-          onPress={() => navigation.navigate('Projects')}
-          accessibilityRole="button"
-          accessibilityLabel={t('projects')}
-          hitSlop={8}>
-          <Text style={styles.headerButtonText}>📁 {t('projects')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
+          style={styles.iconButton}
           onPress={() => navigation.navigate('Settings')}
           accessibilityRole="button"
           accessibilityLabel={t('settings')}
-          hitSlop={12}>
+          hitSlop={8}>
           <Text style={styles.settingsIcon}>⚙</Text>
         </TouchableOpacity>
       </View>
-      {recents.length === 0 ? (
-        <View style={styles.body}>
-          <Text style={styles.emptyText}>{t('noScans')}</Text>
+
+      <ScrollView contentContainerStyle={styles.content}>
+        <TouchableOpacity
+          style={styles.scanCard}
+          onPress={handleScan}
+          activeOpacity={0.85}
+          disabled={scanning}
+          accessibilityRole="button"
+          accessibilityLabel={t('scanDocument')}
+          accessibilityState={{busy: scanning, disabled: scanning}}>
+          {scanning ? (
+            <ActivityIndicator color="#fff" size="large" />
+          ) : (
+            <>
+              <Text style={styles.scanIcon}>⛶</Text>
+              <Text style={styles.scanTitle}>{t('scan')}</Text>
+              <Text style={styles.scanSubtitle}>{t('scanSubtitle')}</Text>
+            </>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.editCard}
+          onPress={openEditor}
+          disabled={scanning}
+          accessibilityRole="button">
+          <Text style={styles.editIcon}>✎</Text>
+          <Text style={styles.editText}>{t('editPdf')}</Text>
+        </TouchableOpacity>
+
+        <View style={styles.sectionRow}>
+          <Text style={styles.sectionTitle}>{t('lastFiles')}</Text>
+          <TouchableOpacity
+            onPress={() => navigation.navigate('Files')}
+            accessibilityRole="button"
+            hitSlop={12}>
+            <Text style={styles.seeAll}>{t('seeAll')} ›</Text>
+          </TouchableOpacity>
         </View>
-      ) : (
-        <FlatList
-          style={styles.list}
-          data={visibleRecents}
-          keyExtractor={item => item.id}
-          ListHeaderComponent={
-            <View>
-              <Text style={styles.sectionTitle}>{t('recentScans')}</Text>
-              {settings.projects.length > 0 && (
-                <View style={styles.chips}>
-                  {[undefined, ...settings.projects].map(p => {
-                    const selected = p?.id === activeFilter;
-                    return (
-                      <TouchableOpacity
-                        key={p?.id ?? 'all'}
-                        style={[styles.chip, selected && styles.chipActive]}
-                        onPress={() => setFilter(p?.id)}
-                        accessibilityRole="radio"
-                        accessibilityState={{checked: selected}}>
-                        <Text
-                          style={[
-                            styles.chipText,
-                            selected && styles.chipTextActive,
-                          ]}>
-                          {p ? p.name : t('allFiles')}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-          }
-          ListEmptyComponent={
-            <Text style={styles.emptyFilter}>{t('noScansInProject')}</Text>
-          }
-          renderItem={({item}) => (
+
+        {recents.length === 0 ? (
+          <Text style={styles.empty}>{t('noScans')}</Text>
+        ) : (
+          recents.slice(0, HOME_RECENTS).map(item => (
             <TouchableOpacity
+              key={item.id}
               style={styles.row}
-              onPress={() => handleOpen(item)}
-              onLongPress={() => handleMore(item)}
+              onPress={() => open(item)}
+              onLongPress={() => navigation.navigate('Files')}
               accessibilityRole="button"
               accessibilityHint={t('recentHint')}>
               {item.thumbnail ? (
@@ -304,75 +161,27 @@ export default function HomeScreen() {
                 <Text style={styles.rowName} numberOfLines={1}>
                   {item.name}
                 </Text>
-                {projectName(item) ? (
-                  <View style={styles.projectBadge}>
-                    <Text style={styles.projectBadgeText} numberOfLines={1}>
-                      📁 {projectName(item)}
-                    </Text>
-                  </View>
-                ) : null}
-                <Text style={styles.rowMeta} numberOfLines={1}>
-                  {new Date(item.savedAt).toLocaleDateString()} ·{' '}
-                  {item.pageCount}{' '}
-                  {item.pageCount === 1 ? t('page') : t('pages')} ·{' '}
-                  {item.mimeType === 'application/pdf' ? 'PDF' : 'JPG'}
-                </Text>
                 <Text
                   style={[
                     styles.rowMeta,
                     missing.has(item.id) && styles.rowMissing,
                   ]}
                   numberOfLines={1}>
-                  {missing.has(item.id) ? t('fileMissing') : item.destination}
+                  {missing.has(item.id)
+                    ? t('fileMissing')
+                    : [
+                        new Date(item.savedAt).toLocaleDateString(LOCALE),
+                        projectName(item.projectId),
+                        item.mimeType === 'application/pdf' ? 'PDF' : 'JPG',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
                 </Text>
               </View>
-              <TouchableOpacity
-                onPress={() => handleMore(item)}
-                accessibilityRole="button"
-                accessibilityLabel={t('moreActions')}
-                hitSlop={12}>
-                <Text style={styles.more}>⋮</Text>
-              </TouchableOpacity>
             </TouchableOpacity>
-          )}
-        />
-      )}
-      <View style={styles.footer}>
-        <TouchableOpacity
-          style={styles.editButton}
-          onPress={() => openEditor()}
-          disabled={scanning}
-          accessibilityRole="button">
-          <Text style={styles.editButtonText}>{t('editPdf')}</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.scanButton}
-          onPress={handleScan}
-          activeOpacity={0.8}
-          disabled={scanning}
-          accessibilityRole="button"
-          accessibilityLabel={t('scanDocument')}
-          accessibilityState={{busy: scanning, disabled: scanning}}>
-          {scanning ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.scanButtonText}>{t('scan')}</Text>
-          )}
-        </TouchableOpacity>
-      </View>
-      <ActionSheet
-        visible={sheet !== null}
-        title={sheet?.title}
-        subtitle={sheet?.subtitle}
-        options={sheet?.options ?? []}
-        onClose={() => setSheet(null)}
-      />
-      {moving && (
-        <View style={styles.overlay}>
-          <ActivityIndicator size="large" color="#fff" />
-          <Text style={styles.overlayText}>{t('moving')}</Text>
-        </View>
-      )}
+          ))
+        )}
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -382,119 +191,77 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingTop: 16,
     paddingHorizontal: 20,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e0e0e0',
+    paddingBottom: 8,
   },
   title: {fontSize: 28, fontWeight: '700', color: '#1a1a1a', flex: 1},
-  headerButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    backgroundColor: '#eef2ff',
-    marginRight: 12,
+  iconButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#f3f4f6',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  headerButtonText: {color: '#2563eb', fontWeight: '600', fontSize: 14},
-  settingsIcon: {fontSize: 26, color: '#555'},
-  body: {flex: 1, justifyContent: 'center', alignItems: 'center', padding: 40},
-  list: {flex: 1},
-  // Le etichette vanno a capo: con lo scorrimento orizzontale non si capiva
-  // che ce n'erano altre fuori dallo schermo.
-  chips: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+  settingsIcon: {fontSize: 22, color: '#444'},
+  content: {padding: 20, gap: 14},
+  scanCard: {
+    backgroundColor: '#2563eb',
+    borderRadius: 24,
+    paddingVertical: 36,
+    alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 20,
-    paddingBottom: 8,
+    minHeight: 180,
+    justifyContent: 'center',
+    elevation: 6,
+    shadowColor: '#2563eb',
+    shadowOffset: {width: 0, height: 6},
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
   },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+  scanIcon: {fontSize: 48, color: '#fff'},
+  scanTitle: {fontSize: 24, fontWeight: '700', color: '#fff'},
+  scanSubtitle: {fontSize: 14, color: '#dbeafe'},
+  editCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     borderRadius: 16,
-    backgroundColor: '#f0f0f0',
+    borderWidth: 1.5,
+    borderColor: '#c7d2fe',
+    backgroundColor: '#eef2ff',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
   },
-  chipActive: {backgroundColor: '#2563eb'},
-  chipText: {fontSize: 14, color: '#444'},
-  chipTextActive: {color: '#fff', fontWeight: '600'},
-  emptyFilter: {textAlign: 'center', color: '#888', padding: 32},
+  editIcon: {fontSize: 22, color: '#1e40af'},
+  editText: {fontSize: 16, fontWeight: '600', color: '#1e40af'},
+  sectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+  },
   sectionTitle: {
+    flex: 1,
     fontSize: 13,
     fontWeight: '600',
-    color: '#666',
+    color: '#555',
     textTransform: 'uppercase',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 8,
   },
+  seeAll: {fontSize: 14, fontWeight: '600', color: '#2563eb'},
+  empty: {color: '#888', textAlign: 'center', paddingVertical: 16},
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 10,
     gap: 12,
+    padding: 8,
+    borderRadius: 12,
+    backgroundColor: '#f7f7f8',
   },
-  thumb: {width: 48, height: 64, borderRadius: 6, backgroundColor: '#f0f0f0'},
+  thumb: {width: 40, height: 54, borderRadius: 6, backgroundColor: '#e5e7eb'},
   thumbEmpty: {borderWidth: 1, borderColor: '#e0e0e0'},
   rowText: {flex: 1},
-  rowName: {fontSize: 16, color: '#1a1a1a', fontWeight: '500'},
-  rowMeta: {fontSize: 12, color: '#888', marginTop: 2},
+  rowName: {fontSize: 15, color: '#1a1a1a', fontWeight: '500'},
+  rowMeta: {fontSize: 12, color: '#666', marginTop: 2},
   rowMissing: {color: '#c2410c'},
-  projectBadge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#eef2ff',
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    marginTop: 3,
-  },
-  projectBadgeText: {fontSize: 12, color: '#2563eb', fontWeight: '500'},
-  overlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 12,
-  },
-  overlayText: {color: '#fff', fontSize: 16, fontWeight: '600'},
-  more: {fontSize: 22, color: '#888', paddingHorizontal: 4},
-  emptyText: {
-    fontSize: 16,
-    color: '#888',
-    textAlign: 'center',
-    lineHeight: 24,
-  },
-  footer: {
-    padding: 20,
-    paddingBottom: 36,
-    alignItems: 'center',
-  },
-  editButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    marginBottom: 12,
-  },
-  editButtonText: {color: '#2563eb', fontSize: 16, fontWeight: '600'},
-  scanButton: {
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 48,
-    paddingVertical: 16,
-    borderRadius: 32,
-    elevation: 4,
-    shadowColor: '#2563eb',
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-  },
-  scanButtonText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '600',
-  },
 });
