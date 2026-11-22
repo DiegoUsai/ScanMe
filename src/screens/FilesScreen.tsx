@@ -15,6 +15,7 @@ import Share from 'react-native-share';
 import {removeRecent, updateRecent} from '../recents/recents';
 import {useRecents} from '../recents/useRecents';
 import ProjectFilter from '../components/ProjectFilter';
+import TabBar from '../components/TabBar';
 import {moveRecent, needsMove, describeLocation} from '../recents/move';
 import ActionSheet from '../components/ActionSheet';
 import type {SheetOption} from '../components/ActionSheet';
@@ -158,14 +159,7 @@ export default function FilesScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          accessibilityRole="button"
-          accessibilityLabel={t('back')}
-          hitSlop={12}>
-          <Text style={styles.backButton}>←</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>{t('files')}</Text>
+        <Text style={styles.title}>{t('filesAndProjects')}</Text>
         <TouchableOpacity
           style={styles.headerButton}
           onPress={() => navigation.navigate('Projects')}
@@ -253,6 +247,7 @@ export default function FilesScreen() {
           )}
         />
       )}
+      <TabBar current="Files" />
       <ActionSheet
         visible={sheet !== null}
         title={sheet?.title}
@@ -283,7 +278,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#e0e0e0',
   },
-  backButton: {fontSize: 24, color: '#2563eb', paddingRight: 4},
   title: {fontSize: 20, fontWeight: '600', color: '#1a1a1a', flex: 1},
   filter: {paddingTop: 12},
   headerButton: {

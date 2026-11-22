@@ -45,12 +45,12 @@ export default function App() {
             <Stack.Screen
               name="Files"
               component={FilesScreen}
-              options={{animation: 'slide_from_right'}}
+              options={{animation: 'none'}}
             />
             <Stack.Screen
               name="Settings"
               component={SettingsScreen}
-              options={{animation: 'slide_from_right'}}
+              options={{animation: 'none'}}
             />
             <Stack.Screen
               name="Projects"

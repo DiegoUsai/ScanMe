@@ -14,6 +14,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {useRecents} from '../recents/useRecents';
+import TabBar from '../components/TabBar';
 import {useSettings} from '../settings/SettingsContext';
 import {pickPdf, PdfErrorCode} from '../native/PdfEditor';
 import {scan, getErrorCode, ScanErrorCode} from '../native/DocumentScanner';
@@ -89,14 +90,6 @@ export default function HomeScreen() {
       <StatusBar barStyle="dark-content" />
       <View style={styles.header}>
         <Text style={styles.title}>{t('appName')}</Text>
-        <TouchableOpacity
-          style={styles.iconButton}
-          onPress={() => navigation.navigate('Settings')}
-          accessibilityRole="button"
-          accessibilityLabel={t('settings')}
-          hitSlop={8}>
-          <Text style={styles.settingsIcon}>⚙</Text>
-        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.content}>
@@ -182,6 +175,7 @@ export default function HomeScreen() {
           ))
         )}
       </ScrollView>
+      <TabBar current="Home" />
     </SafeAreaView>
   );
 }
@@ -196,15 +190,6 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   title: {fontSize: 28, fontWeight: '700', color: '#1a1a1a', flex: 1},
-  iconButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#f3f4f6',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  settingsIcon: {fontSize: 22, color: '#444'},
   content: {padding: 20, gap: 14},
   scanCard: {
     backgroundColor: '#2563eb',
