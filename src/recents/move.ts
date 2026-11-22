@@ -8,9 +8,9 @@ import {
 } from '../native/StorageAccess';
 import {saveToDevice, cleanTempFiles} from '../utils/files';
 import {
-  projectFolderName,
+  projectSubFolders,
   resolveDestination,
-  sameDestination,
+  sameLocation,
 } from '../settings/projects';
 import type {Project, Settings} from '../settings/settings';
 import {t} from '../i18n';
@@ -43,7 +43,7 @@ export function describeLocation(
 ): string {
   const target = resolveDestination(project, settings.destination);
   const root = target ? describeFolder(target) : t('downloadFolder');
-  return project ? `${root} › ${projectFolderName(project)}` : root;
+  return [root, ...projectSubFolders(project)].join(' › ');
 }
 
 /**
@@ -62,7 +62,7 @@ export async function moveRecent(
       code: StorageErrorCode.PermissionDenied,
     });
   }
-  const subFolders = project ? [projectFolderName(project)] : [];
+  const subFolders = projectSubFolders(project);
   const sources = entry.uris ?? [entry.uri];
   const names = movedFileNames(entry);
   const temp: string[] = [];
@@ -113,13 +113,5 @@ export function needsMove(
   if (from?.id === to?.id && entry.projectId === to?.id) {
     return false;
   }
-  const sameFolder =
-    (from ? projectFolderName(from) : '') === (to ? projectFolderName(to) : '');
-  return !(
-    sameFolder &&
-    sameDestination(
-      resolveDestination(from, settings.destination),
-      resolveDestination(to, settings.destination),
-    )
-  );
+  return !sameLocation(from, to, settings.destination);
 }

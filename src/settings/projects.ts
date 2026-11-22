@@ -7,6 +7,36 @@ export function projectFolderName(project: Project): string {
   return sanitizeFileName(project.name);
 }
 
+/**
+ * Sottocartelle in cui finiscono i file del progetto, dentro la sua
+ * destinazione. Una cartella scelta apposta per il progetto è già la cartella
+ * del progetto: aggiungere anche il nome creerebbe due cartelle annidate
+ * (es. Drive › Fatture › Fatture).
+ */
+export function projectSubFolders(project: Project | undefined): string[] {
+  if (!project) {
+    return [];
+  }
+  if (!project.phone && project.destination && project.ownFolder) {
+    return [];
+  }
+  return [projectFolderName(project)];
+}
+
+/** Due progetti (o nessun progetto) mettono i file nello stesso posto. */
+export function sameLocation(
+  a: Project | undefined,
+  b: Project | undefined,
+  fallback: FolderDestination | undefined,
+): boolean {
+  return (
+    sameDestination(
+      resolveDestination(a, fallback),
+      resolveDestination(b, fallback),
+    ) && projectSubFolders(a).join('/') === projectSubFolders(b).join('/')
+  );
+}
+
 /** Nuovo progetto; restituisce undefined se il nome è vuoto o già usato. */
 export function createProject(
   name: string,

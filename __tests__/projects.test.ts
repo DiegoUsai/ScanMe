@@ -47,3 +47,48 @@ describe('projects', () => {
     expect(s.projects[0].destination?.name).toBe('Scansioni');
   });
 });
+
+describe('projectSubFolders', () => {
+  const {projectSubFolders, sameLocation} = require('../src/settings/projects');
+  it('una cartella scelta per il progetto non aggiunge sottocartelle', () => {
+    expect(
+      projectSubFolders({
+        id: '1',
+        name: 'Fatture',
+        destination: drive,
+        ownFolder: true,
+      }),
+    ).toEqual([]);
+  });
+  it('i progetti vecchi con cartella tengono la sottocartella', () => {
+    expect(
+      projectSubFolders({id: '1', name: 'Fatture', destination: drive}),
+    ).toEqual(['Fatture']);
+  });
+  it('predefinita e telefono usano la sottocartella', () => {
+    expect(projectSubFolders({id: '1', name: 'Casa'})).toEqual(['Casa']);
+    expect(
+      projectSubFolders({
+        id: '1',
+        name: 'Casa',
+        phone: true,
+        destination: drive,
+        ownFolder: true,
+      }),
+    ).toEqual(['Casa']);
+    expect(projectSubFolders(undefined)).toEqual([]);
+  });
+  it('riscegliere la stessa cartella cambia posizione se sparisce la sottocartella', () => {
+    const legacy = {id: '1', name: 'F', destination: drive};
+    expect(sameLocation(legacy, {...legacy, ownFolder: true}, phone)).toBe(
+      false,
+    );
+    expect(sameLocation(legacy, legacy, phone)).toBe(true);
+  });
+  it('legge ownFolder dalle impostazioni', () => {
+    const s = parseSettings({
+      projects: [{id: '1', name: 'A', destination: drive, ownFolder: true}],
+    });
+    expect(s.projects[0].ownFolder).toBe(true);
+  });
+});

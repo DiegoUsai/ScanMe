@@ -63,6 +63,7 @@ export default function SettingsScreen({navigation}: Props) {
               : t('downloadFolder')}
           </Text>
           <Text style={styles.hint}>{t('defaultDestinationHint')}</Text>
+          <Text style={styles.hint}>{t('folderPickerHint')}</Text>
           <View style={styles.buttons}>
             <TouchableOpacity
               style={styles.button}

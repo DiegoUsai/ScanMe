@@ -7,6 +7,7 @@ import PreviewScreen from './screens/PreviewScreen';
 import SettingsScreen from './screens/SettingsScreen';
 import ProjectsScreen from './screens/ProjectsScreen';
 import EditPdfScreen from './screens/EditPdfScreen';
+import FilesScreen from './screens/FilesScreen';
 import type {OpenedPdf} from './native/PdfEditor';
 import {SettingsProvider} from './settings/SettingsContext';
 
@@ -20,6 +21,7 @@ export type RootStackParamList = {
     projectId?: string;
   };
   Settings: undefined;
+  Files: undefined;
   Projects: undefined;
   EditPdf: {pdf: OpenedPdf};
 };
@@ -38,6 +40,11 @@ export default function App() {
             <Stack.Screen
               name="Preview"
               component={PreviewScreen}
+              options={{animation: 'slide_from_right'}}
+            />
+            <Stack.Screen
+              name="Files"
+              component={FilesScreen}
               options={{animation: 'slide_from_right'}}
             />
             <Stack.Screen

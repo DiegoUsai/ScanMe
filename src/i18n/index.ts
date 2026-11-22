@@ -1,11 +1,14 @@
-import {NativeModules, Platform} from 'react-native';
+/**
+ * L'interfaccia è sempre in italiano. Prima la lingua veniva dedotta da
+ * `NativeModules.I18nManager.localeIdentifier`, che con la nuova architettura
+ * di React Native non esiste più: il valore mancava e l'app finiva in inglese
+ * anche su un telefono in italiano. Le stringhe inglesi restano solo come
+ * riserva per una futura traduzione.
+ */
+const isItalian = true;
 
-const deviceLocale =
-  Platform.OS === 'android'
-    ? NativeModules.I18nManager?.localeIdentifier ?? 'en'
-    : 'en';
-
-const isItalian = deviceLocale.startsWith('it');
+/** Lingua per date e numeri, coerente con le stringhe. */
+export const LOCALE = 'it-IT';
 
 const strings = {
   it: {
@@ -13,7 +16,7 @@ const strings = {
     scan: 'Scansiona',
     scanDocument: 'Scansiona documento',
     gallery: 'Galleria',
-    noScans: 'Nessuna scansione.\nTocca il pulsante per iniziare.',
+    noScans: 'Nessun file salvato.\nLe scansioni che salvi compaiono qui.',
     preview: 'Anteprima',
     back: 'Indietro',
     pages: 'pagine',
@@ -35,15 +38,15 @@ const strings = {
     qualityHigh: 'Alta',
     qualityMedium: 'Media',
     qualityLow: 'Bassa',
-    saved: 'Salvato!',
-    shared: 'Condiviso!',
+    saved: 'Salvato',
+    shared: 'Condiviso',
     error: 'Errore',
     scanError: 'Errore durante la scansione',
     saveError: 'Errore durante il salvataggio',
     shareError: 'Errore durante la condivisione',
     scannerUnavailable: 'Scanner non disponibile su questo dispositivo',
     cameraPermission: 'Permesso fotocamera necessario',
-    recentScans: 'Scansioni recenti',
+    recentScans: 'Ultimi file',
     filters: 'Filtri',
     filterColor: 'Colore',
     filterGray: 'Grigio',
@@ -96,7 +99,7 @@ const strings = {
     newProjectPlaceholder: 'Nuovo progetto, es. Documenti personali',
     add: 'Aggiungi',
     projectsHint:
-      'Ogni progetto diventa una sottocartella con il suo nome nella sua destinazione. Tocca un progetto per scegliere dove salvarlo.',
+      'Con «Destinazione predefinita» o «Sul telefono» il progetto diventa una sottocartella con il suo nome. Con «Cartella o cloud…» i file vanno direttamente nella cartella che scegli. Tocca un progetto per cambiarne la posizione.',
     projectNameInvalid: 'Scegli un nome non vuoto e non già usato',
     deleteProject: 'Elimina progetto',
     deleteProjectHint:
@@ -145,13 +148,24 @@ const strings = {
     captureMode: 'Scatto manuale o automatico',
     captureModeHint:
       "Si sceglie con l'interruttore in alto nella schermata dello scanner: lo scanner di Google non permette di impostarlo dall'app.",
+    moreProjects: 'Altri',
+    manageProjectsAction: 'Gestisci progetti',
+    allProjects: 'Tutti i progetti',
+    files: 'File',
+    seeAll: 'Vedi tutti',
+    lastFiles: 'Ultimi file',
+    scanSubtitle: 'Documenti, ricevute, fogli',
+    folderPickerHint:
+      'Si apre il selettore di Android: puoi entrare in una cartella che esiste già e toccare «Usa questa cartella», oppure crearne una nuova. Su Drive la radice «Il mio Drive» non si può scegliere, perché Android la blocca per privacy: scegli o crea una cartella al suo interno.',
+    ownFolderHint:
+      'I file del progetto vanno direttamente in questa cartella, senza altre sottocartelle.',
   },
   en: {
     appName: 'ScanMe',
     scan: 'Scan',
     scanDocument: 'Scan document',
     gallery: 'Gallery',
-    noScans: 'No scans yet.\nTap the button to start.',
+    noScans: 'No saved files.\nThe scans you save appear here.',
     preview: 'Preview',
     back: 'Back',
     pages: 'pages',
@@ -232,7 +246,7 @@ const strings = {
     newProjectPlaceholder: 'New project, e.g. Personal documents',
     add: 'Add',
     projectsHint:
-      'Each project becomes a subfolder named after it in its destination. Tap a project to choose where it is saved.',
+      'With "Default destination" or "On the phone" the project becomes a subfolder named after it. With "Folder or cloud…" files go straight into the folder you choose. Tap a project to change its location.',
     projectNameInvalid: 'Choose a name that is not empty or already used',
     deleteProject: 'Delete project',
     deleteProjectHint:
@@ -280,6 +294,17 @@ const strings = {
     captureMode: 'Manual or automatic capture',
     captureModeHint:
       'Use the switch at the top of the scanner screen: the Google scanner does not let apps set it.',
+    moreProjects: 'More',
+    manageProjectsAction: 'Manage projects',
+    allProjects: 'All projects',
+    files: 'Files',
+    seeAll: 'See all',
+    lastFiles: 'Latest files',
+    scanSubtitle: 'Documents, receipts, sheets',
+    folderPickerHint:
+      'The Android picker opens: you can enter an existing folder and tap "Use this folder", or create a new one. On Drive the "My Drive" root cannot be chosen because Android blocks it for privacy: choose or create a folder inside it.',
+    ownFolderHint:
+      'Project files go straight into this folder, with no extra subfolders.',
   },
 };
 

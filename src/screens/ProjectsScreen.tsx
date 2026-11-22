@@ -13,11 +13,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {t} from '../i18n';
 import {useSettings} from '../settings/SettingsContext';
-import {
-  createProject,
-  resolveDestination,
-  sameDestination,
-} from '../settings/projects';
+import {createProject, sameLocation} from '../settings/projects';
 import type {Project, Settings} from '../settings/settings';
 import type {FolderDestination} from '../native/StorageAccess';
 import {loadRecents, updateRecent} from '../recents/recents';
@@ -54,6 +50,8 @@ function withLocation(project: Project, location: Location): Project {
     ...project,
     phone: location.kind === 'phone' ? true : undefined,
     destination: location.kind === 'folder' ? location.folder : undefined,
+    // La cartella scelta qui è già quella del progetto: niente sottocartella.
+    ownFolder: location.kind === 'folder' ? true : undefined,
   };
 }
 
@@ -139,10 +137,7 @@ export default function ProjectsScreen({navigation}: Props) {
         p.id === project.id ? changed : p,
       );
       await saveProjects(projects);
-      const moved = !sameDestination(
-        resolveDestination(project, before.destination),
-        resolveDestination(changed, before.destination),
-      );
+      const moved = !sameLocation(project, changed, before.destination);
       const hasFiles = (await loadRecents()).some(
         r => r.projectId === project.id,
       );
@@ -277,7 +272,10 @@ export default function ProjectsScreen({navigation}: Props) {
           );
         })}
       </View>
-      <Text style={styles.hint}>{t('projectsHint')}</Text>
+      <Text style={styles.hint}>
+        {newLocation.kind === 'folder' ? t('ownFolderHint') : t('projectsHint')}
+      </Text>
+      <Text style={styles.hint}>{t('folderPickerHint')}</Text>
 
       <FlatList
         data={settings.projects}
@@ -335,7 +333,12 @@ const styles = StyleSheet.create({
   },
   backButton: {fontSize: 24, color: '#2563eb', paddingRight: 4},
   title: {fontSize: 20, fontWeight: '600', color: '#1a1a1a', flex: 1},
-  addRow: {flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingTop: 8},
+  addRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+  },
   input: {
     flex: 1,
     borderWidth: 1,

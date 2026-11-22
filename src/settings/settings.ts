@@ -15,6 +15,13 @@ export interface Project {
   destination?: FolderDestination;
   /** true = sul telefono (Download/ScanMe), qualunque sia la predefinita. */
   phone?: boolean;
+  /**
+   * true = `destination` è già la cartella del progetto: i file ci vanno
+   * dentro direttamente, senza creare una sottocartella con il nome del
+   * progetto. Assente nei progetti creati prima di questa modifica, che
+   * continuano a usare la sottocartella per non spostare i file già salvati.
+   */
+  ownFolder?: boolean;
 }
 
 export interface Settings {
@@ -25,7 +32,10 @@ export interface Settings {
   projects: Project[];
 }
 
-export const DEFAULT_SETTINGS: Settings = {defaultFormat: 'pdf', projects: []};
+export const DEFAULT_SETTINGS: Settings = {
+  defaultFormat: 'pdf',
+  projects: [],
+};
 
 const FORMATS: readonly OutputFormat[] = ['pdf', 'jpg', 'gallery'];
 
@@ -68,6 +78,7 @@ export function parseSettings(raw: unknown): Settings {
             name: project.name,
             destination: parseDestination(project.destination),
             phone: project.phone === true ? true : undefined,
+            ownFolder: project.ownFolder === true ? true : undefined,
           },
         ];
       })
