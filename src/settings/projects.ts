@@ -33,7 +33,18 @@ export function resolveDestination(
   project: Project | undefined,
   fallback: FolderDestination | undefined,
 ): FolderDestination | undefined {
+  if (project?.phone) {
+    return undefined;
+  }
   return project?.destination ?? fallback;
+}
+
+/** Due destinazioni coincidono (undefined = Download/ScanMe sul telefono). */
+export function sameDestination(
+  a: FolderDestination | undefined,
+  b: FolderDestination | undefined,
+): boolean {
+  return (a?.uri ?? null) === (b?.uri ?? null);
 }
 
 export function findProject(

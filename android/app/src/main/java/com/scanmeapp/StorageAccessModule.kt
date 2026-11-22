@@ -265,6 +265,43 @@ class StorageAccessModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    /** Copia un file `content://` nella cache dell'app (serve per spostarlo). */
+    @ReactMethod
+    fun copyToCache(uri: String, fileName: String, promise: Promise) {
+        try {
+            val dir = File(reactApplicationContext.cacheDir, "move").apply { mkdirs() }
+            val target = File(dir, "${System.currentTimeMillis()}-$fileName")
+            reactApplicationContext.contentResolver.openInputStream(Uri.parse(uri))?.use { input ->
+                FileOutputStream(target).use { input.copyTo(it) }
+            } ?: throw IllegalStateException("Cannot read file")
+            promise.resolve(target.absolutePath)
+        } catch (e: SecurityException) {
+            promise.reject("PERMISSION_DENIED", e.message ?: "No access to file")
+        } catch (e: Exception) {
+            promise.reject("COPY_ERROR", e.message ?: "Cannot read file")
+        }
+    }
+
+    /**
+     * Cancella un file salvato da ScanMe: documento SAF o voce MediaStore.
+     * Usato solo dopo che la copia nella nuova posizione è riuscita.
+     */
+    @ReactMethod
+    fun deleteFile(uri: String, promise: Promise) {
+        try {
+            val parsed = Uri.parse(uri)
+            val resolver = reactApplicationContext.contentResolver
+            val deleted = if (DocumentsContract.isDocumentUri(reactApplicationContext, parsed)) {
+                DocumentsContract.deleteDocument(resolver, parsed)
+            } else {
+                resolver.delete(parsed, null, null) > 0
+            }
+            promise.resolve(deleted)
+        } catch (e: Exception) {
+            promise.resolve(false)
+        }
+    }
+
     /** Nome dell'app che fornisce la cartella (es. "Drive"), se ricavabile. */
     private fun providerName(tree: Uri): String? = try {
         val pm = reactApplicationContext.packageManager

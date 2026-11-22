@@ -13,6 +13,8 @@ export interface Project {
   name: string;
   /** Destinazione del progetto; assente = destinazione predefinita. */
   destination?: FolderDestination;
+  /** true = sul telefono (Download/ScanMe), qualunque sia la predefinita. */
+  phone?: boolean;
 }
 
 export interface Settings {
@@ -65,6 +67,7 @@ export function parseSettings(raw: unknown): Settings {
             id: project.id,
             name: project.name,
             destination: parseDestination(project.destination),
+            phone: project.phone === true ? true : undefined,
           },
         ];
       })

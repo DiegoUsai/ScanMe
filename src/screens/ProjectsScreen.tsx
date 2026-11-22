@@ -7,13 +7,23 @@ import {
   TextInput,
   FlatList,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {t} from '../i18n';
 import {useSettings} from '../settings/SettingsContext';
-import {createProject, projectFolderName} from '../settings/projects';
-import type {Project} from '../settings/settings';
+import {
+  createProject,
+  resolveDestination,
+  sameDestination,
+} from '../settings/projects';
+import type {Project, Settings} from '../settings/settings';
+import type {FolderDestination} from '../native/StorageAccess';
+import {loadRecents, updateRecent} from '../recents/recents';
+import {moveRecent, describeLocation} from '../recents/move';
+import ActionSheet from '../components/ActionSheet';
+import type {SheetOption} from '../components/ActionSheet';
 import {
   pickFolder,
   describeFolder,
@@ -24,14 +34,54 @@ import type {RootStackParamList} from '../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Projects'>;
 
+/** Dove salvare i file di un progetto. */
+type Location =
+  | {kind: 'default'}
+  | {kind: 'phone'}
+  | {kind: 'folder'; folder: FolderDestination};
+
+function locationOf(project: Project): Location {
+  if (project.phone) {
+    return {kind: 'phone'};
+  }
+  return project.destination
+    ? {kind: 'folder', folder: project.destination}
+    : {kind: 'default'};
+}
+
+function withLocation(project: Project, location: Location): Project {
+  return {
+    ...project,
+    phone: location.kind === 'phone' ? true : undefined,
+    destination: location.kind === 'folder' ? location.folder : undefined,
+  };
+}
+
 export default function ProjectsScreen({navigation}: Props) {
   const {settings, update} = useSettings();
   const [newName, setNewName] = useState('');
+  const [newLocation, setNewLocation] = useState<Location>({kind: 'default'});
+  const [sheet, setSheet] = useState<Project | null>(null);
+  const [moving, setMoving] = useState(false);
 
   const saveProjects = useCallback(
     (projects: Project[]) => update({projects}),
     [update],
   );
+
+  /** Fa scegliere una cartella o un cloud; undefined se l'utente annulla. */
+  const askFolder = useCallback(async (): Promise<
+    FolderDestination | undefined
+  > => {
+    try {
+      return await pickFolder();
+    } catch (error: unknown) {
+      if (getErrorCode(error) !== StorageErrorCode.Cancelled) {
+        Alert.alert(t('error'), t('folderPickError'));
+      }
+      return undefined;
+    }
+  }, []);
 
   const handleAdd = useCallback(async () => {
     const project = createProject(newName, settings.projects);
@@ -39,74 +89,140 @@ export default function ProjectsScreen({navigation}: Props) {
       Alert.alert(t('projectNameInvalid'));
       return;
     }
-    await saveProjects([...settings.projects, project]);
+    await saveProjects([
+      ...settings.projects,
+      withLocation(project, newLocation),
+    ]);
     setNewName('');
-  }, [newName, settings.projects, saveProjects]);
+    setNewLocation({kind: 'default'});
+  }, [newName, newLocation, settings.projects, saveProjects]);
 
-  const setDestination = useCallback(
-    async (project: Project) => {
+  const chooseNewFolder = useCallback(async () => {
+    const folder = await askFolder();
+    if (folder) {
+      setNewLocation({kind: 'folder', folder});
+    }
+  }, [askFolder]);
+
+  /** Sposta i file già salvati del progetto nella sua nuova posizione. */
+  const migrate = useCallback(
+    async (project: Project, nextSettings: Settings) => {
+      setMoving(true);
+      let failed = 0;
       try {
-        const folder = await pickFolder();
-        await saveProjects(
-          settings.projects.map(p =>
-            p.id === project.id ? {...p, destination: folder} : p,
-          ),
+        const files = (await loadRecents()).filter(
+          r => r.projectId === project.id,
         );
-      } catch (error: unknown) {
-        if (getErrorCode(error) !== StorageErrorCode.Cancelled) {
-          Alert.alert(t('error'), t('folderPickError'));
+        for (const file of files) {
+          try {
+            const {entry} = await moveRecent(file, project, nextSettings);
+            await updateRecent(entry);
+          } catch {
+            failed++;
+          }
         }
+      } finally {
+        setMoving(false);
+      }
+      if (failed > 0) {
+        Alert.alert(t('error'), `${t('moveError')} (${failed})`);
       }
     },
-    [settings.projects, saveProjects],
+    [],
   );
 
-  // Su Android un Alert mostra al massimo tre pulsanti: la scelta della
-  // cartella sta sul tocco della riga, le altre azioni sul menu ⋮.
-  const handleActions = useCallback(
-    (project: Project) => {
-      Alert.alert(project.name, undefined, [
-        {text: t('cancel'), style: 'cancel'},
-        {
-          text: t('deleteProject'),
-          style: 'destructive',
-          onPress: () =>
-            Alert.alert(t('deleteProject'), t('deleteProjectHint'), [
-              {text: t('cancel'), style: 'cancel'},
-              {
-                text: t('confirm'),
-                style: 'destructive',
-                onPress: () =>
-                  saveProjects(
-                    settings.projects.filter(p => p.id !== project.id),
-                  ),
-              },
-            ]),
-        },
-        ...(project.destination
-          ? [
-              {
-                text: t('useDefaultDestination'),
-                onPress: () =>
-                  saveProjects(
-                    settings.projects.map(p =>
-                      p.id === project.id ? {...p, destination: undefined} : p,
-                    ),
-                  ),
-              },
-            ]
-          : []),
-      ]);
+  const changeLocation = useCallback(
+    async (project: Project, location: Location) => {
+      const before = settings;
+      const changed = withLocation(project, location);
+      const projects = settings.projects.map(p =>
+        p.id === project.id ? changed : p,
+      );
+      await saveProjects(projects);
+      const moved = !sameDestination(
+        resolveDestination(project, before.destination),
+        resolveDestination(changed, before.destination),
+      );
+      const hasFiles = (await loadRecents()).some(
+        r => r.projectId === project.id,
+      );
+      if (moved && hasFiles) {
+        Alert.alert(t('migrateFiles'), t('migrateFilesHint'), [
+          {text: t('migrateNo'), style: 'cancel'},
+          {
+            text: t('migrateYes'),
+            onPress: () => migrate(changed, {...before, projects}),
+          },
+        ]);
+      }
     },
-    [settings.projects, saveProjects],
+    [settings, saveProjects, migrate],
   );
+
+  const sheetOptions = (project: Project): SheetOption[] => {
+    const current = locationOf(project).kind;
+    return [
+      {
+        label: t('locationDefault'),
+        detail: settings.destination
+          ? describeFolder(settings.destination)
+          : t('downloadFolder'),
+        selected: current === 'default',
+        onPress: () => changeLocation(project, {kind: 'default'}),
+      },
+      {
+        label: t('locationPhone'),
+        detail: t('downloadFolder'),
+        selected: current === 'phone',
+        onPress: () => changeLocation(project, {kind: 'phone'}),
+      },
+      {
+        label: t('locationFolder'),
+        detail: project.destination
+          ? describeFolder(project.destination)
+          : undefined,
+        selected: current === 'folder',
+        onPress: async () => {
+          const folder = await askFolder();
+          if (folder) {
+            await changeLocation(project, {kind: 'folder', folder});
+          }
+        },
+      },
+      {
+        label: t('deleteProject'),
+        destructive: true,
+        onPress: () =>
+          Alert.alert(t('deleteProject'), t('deleteProjectHint'), [
+            {text: t('cancel'), style: 'cancel'},
+            {
+              text: t('confirm'),
+              style: 'destructive',
+              onPress: () =>
+                saveProjects(
+                  settings.projects.filter(p => p.id !== project.id),
+                ),
+            },
+          ]),
+      },
+    ];
+  };
 
   /** Percorso completo in cui finiranno i file del progetto. */
-  const describe = (project: Project): string => {
-    const base = project.destination ?? settings.destination;
-    const root = base ? describeFolder(base) : t('downloadFolder');
-    return `${root} › ${projectFolderName(project)}`;
-  };
+  const describe = (project: Project): string =>
+    describeLocation(project, settings);
+
+  const locationChips: Array<{key: Location['kind']; label: string}> = [
+    {key: 'default', label: t('locationDefault')},
+    {key: 'phone', label: t('locationPhone')},
+    {
+      key: 'folder',
+      label:
+        newLocation.kind === 'folder'
+          ? describeFolder(newLocation.folder)
+          : t('locationFolder'),
+    },
+  ];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -137,6 +253,30 @@ export default function ProjectsScreen({navigation}: Props) {
           <Text style={styles.addButtonText}>{t('add')}</Text>
         </TouchableOpacity>
       </View>
+      <Text style={styles.locationLabel}>{t('projectLocation')}</Text>
+      <View style={styles.chips}>
+        {locationChips.map(chip => {
+          const selected = newLocation.kind === chip.key;
+          return (
+            <TouchableOpacity
+              key={chip.key}
+              style={[styles.chip, selected && styles.chipActive]}
+              onPress={() =>
+                chip.key === 'folder'
+                  ? chooseNewFolder()
+                  : setNewLocation({kind: chip.key} as Location)
+              }
+              accessibilityRole="radio"
+              accessibilityState={{checked: selected}}>
+              <Text
+                style={[styles.chipText, selected && styles.chipTextActive]}
+                numberOfLines={1}>
+                {chip.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
       <Text style={styles.hint}>{t('projectsHint')}</Text>
 
       <FlatList
@@ -148,7 +288,7 @@ export default function ProjectsScreen({navigation}: Props) {
           <View style={styles.row}>
             <TouchableOpacity
               style={styles.rowText}
-              onPress={() => setDestination(item)}
+              onPress={() => setSheet(item)}
               accessibilityRole="button"
               accessibilityHint={t('chooseFolder')}>
               <Text style={styles.rowName}>{item.name}</Text>
@@ -157,7 +297,7 @@ export default function ProjectsScreen({navigation}: Props) {
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
-              onPress={() => handleActions(item)}
+              onPress={() => setSheet(item)}
               accessibilityRole="button"
               accessibilityLabel={t('moreActions')}
               hitSlop={12}>
@@ -166,6 +306,19 @@ export default function ProjectsScreen({navigation}: Props) {
           </View>
         )}
       />
+      <ActionSheet
+        visible={sheet !== null}
+        title={sheet?.name}
+        subtitle={sheet ? describe(sheet) : undefined}
+        options={sheet ? sheetOptions(sheet) : []}
+        onClose={() => setSheet(null)}
+      />
+      {moving && (
+        <View style={styles.overlay}>
+          <ActivityIndicator size="large" color="#fff" />
+          <Text style={styles.overlayText}>{t('moving')}</Text>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -200,6 +353,41 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   addButtonText: {color: '#fff', fontWeight: '600'},
+  locationLabel: {
+    fontSize: 12,
+    color: '#888',
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 6,
+  },
+  chips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 16,
+  },
+  chip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    backgroundColor: '#f0f0f0',
+    maxWidth: '100%',
+  },
+  chipActive: {backgroundColor: '#2563eb'},
+  chipText: {fontSize: 14, color: '#444'},
+  chipTextActive: {color: '#fff', fontWeight: '600'},
+  overlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  overlayText: {color: '#fff', fontSize: 16, fontWeight: '600'},
   hint: {fontSize: 12, color: '#888', paddingHorizontal: 16, paddingTop: 6},
   list: {paddingVertical: 8},
   empty: {textAlign: 'center', color: '#888', padding: 32},

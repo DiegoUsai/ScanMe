@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   FlatList,
-  ScrollView,
   TextInput,
   Alert,
 } from 'react-native';
@@ -150,6 +149,7 @@ export default function PreviewScreen({route, navigation}: Props) {
   const handleSave = useCallback(() => {
     runSave(async baseName => {
       let savedUri: string;
+      let allUris: string[] = [];
       let mimeType = 'image/jpeg';
       let where: string;
       // Con un progetto i file vanno nella sua sottocartella, dentro la sua
@@ -170,6 +170,7 @@ export default function PreviewScreen({route, navigation}: Props) {
           );
         }
         savedUri = uris[0];
+        allUris = uris;
         where = t('galleryFolder');
         if (subFolder) {
           where = `${where} › ${subFolder}`;
@@ -205,6 +206,7 @@ export default function PreviewScreen({route, navigation}: Props) {
             uris.push(await write(pages[i], `${name}.jpg`, mimeType));
           }
           savedUri = uris[0];
+          allUris = uris;
         }
       }
       // Il file salvato sta nella cartella scelta qui: il permesso va tenuto,
@@ -216,6 +218,7 @@ export default function PreviewScreen({route, navigation}: Props) {
           {
             name: baseName,
             uri: savedUri,
+            uris: allUris.length > 1 ? allUris : undefined,
             mimeType,
             pageCount: pages.length,
             destination: where,
@@ -455,10 +458,7 @@ export default function PreviewScreen({route, navigation}: Props) {
       {/* Progetto: sempre visibile, con la scorciatoia per crearne uno */}
       <View style={styles.projectContainer}>
         <Text style={[styles.label, styles.projectLabel]}>{t('project')}</Text>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chips}>
+        <View style={styles.chips}>
           {[undefined, ...settings.projects].map(p => {
             const selected = p?.id === projectId;
             return (
@@ -483,7 +483,7 @@ export default function PreviewScreen({route, navigation}: Props) {
             accessibilityRole="button">
             <Text style={styles.chipAddText}>{t('newProject')}</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </View>
       </View>
 
       {/* Destinazione: la Galleria ha una posizione fissa, un progetto la sua */}
@@ -589,7 +589,13 @@ const styles = StyleSheet.create({
   formatContainer: {paddingHorizontal: 16, paddingBottom: 12},
   projectContainer: {paddingBottom: 12},
   projectLabel: {paddingHorizontal: 16},
-  chips: {gap: 8, paddingHorizontal: 16},
+  // A capo invece dello scorrimento: così si vedono tutti i progetti.
+  chips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 16,
+  },
   chip: {
     paddingHorizontal: 14,
     paddingVertical: 8,
