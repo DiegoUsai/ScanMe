@@ -12,6 +12,7 @@ import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {t} from '../i18n';
 import {useSettings} from '../settings/SettingsContext';
 import FormatSelector from '../components/FormatSelector';
+import TabBar from '../components/TabBar';
 import {
   pickFolder,
   describeFolder,
@@ -44,13 +45,6 @@ export default function SettingsScreen({navigation}: Props) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity
-          onPress={() => navigation.goBack()}
-          accessibilityRole="button"
-          accessibilityLabel={t('back')}
-          hitSlop={12}>
-          <Text style={styles.backButton}>←</Text>
-        </TouchableOpacity>
         <Text style={styles.title}>{t('settings')}</Text>
       </View>
 
@@ -111,6 +105,7 @@ export default function SettingsScreen({navigation}: Props) {
           <Text style={styles.hint}>{t('captureModeHint')}</Text>
         </View>
       </ScrollView>
+      <TabBar current="Settings" />
     </SafeAreaView>
   );
 }
@@ -125,7 +120,6 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     gap: 12,
   },
-  backButton: {fontSize: 24, color: '#2563eb', paddingRight: 4},
   title: {fontSize: 20, fontWeight: '600', color: '#1a1a1a', flex: 1},
   content: {padding: 16, paddingBottom: 40},
   sectionTitle: {
