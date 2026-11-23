@@ -8,6 +8,10 @@ on:
         description: "ABI da includere (es. arm64-v8a per i telefoni moderni, oppure tutte)"
         required: false
         default: "armeabi-v7a,arm64-v8a,x86,x86_64"
+  # Collaudo automatico solo quando cambia questo file.
+  pull_request:
+    paths:
+      - .github/workflows/android-apk.yml
 
 permissions:
   contents: read
@@ -53,7 +57,7 @@ jobs:
 
       - name: Compila APK release
         working-directory: android
-        run: ./gradlew --no-daemon assembleRelease -PreactNativeArchitectures="${{ inputs.architetture }}"
+        run: ./gradlew --no-daemon assembleRelease -PreactNativeArchitectures="${{ inputs.architetture || 'armeabi-v7a,arm64-v8a,x86,x86_64' }}"
 
       - name: Firma APK di prova (solo se manca la chiave release)
         if: env.HAS_RELEASE_KEY != 'true'
