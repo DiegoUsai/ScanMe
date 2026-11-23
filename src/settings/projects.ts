@@ -37,16 +37,30 @@ export function sameLocation(
   );
 }
 
+/** Perché un nome di progetto non va bene; undefined se è valido. */
+export type ProjectNameError = 'empty' | 'duplicate';
+
+export function projectNameError(
+  name: string,
+  existing: Project[],
+): ProjectNameError | undefined {
+  const trimmed = name.trim();
+  if (trimmed === '') {
+    return 'empty';
+  }
+  if (existing.some(p => p.name.toLowerCase() === trimmed.toLowerCase())) {
+    return 'duplicate';
+  }
+  return undefined;
+}
+
 /** Nuovo progetto; restituisce undefined se il nome è vuoto o già usato. */
 export function createProject(
   name: string,
   existing: Project[],
 ): Project | undefined {
   const trimmed = name.trim();
-  if (
-    trimmed === '' ||
-    existing.some(p => p.name.toLowerCase() === trimmed.toLowerCase())
-  ) {
+  if (projectNameError(trimmed, existing)) {
     return undefined;
   }
   return {

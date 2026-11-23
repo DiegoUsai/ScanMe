@@ -101,6 +101,10 @@ const strings = {
     projectsHint:
       'Con «Destinazione predefinita» o «Sul telefono» il progetto diventa una sottocartella con il suo nome. Con «Cartella o cloud…» i file vanno direttamente nella cartella che scegli. Tocca un progetto per cambiarne la posizione.',
     projectNameInvalid: 'Scegli un nome non vuoto e non già usato',
+    projectNameEmpty: 'Scrivi un nome per il progetto',
+    projectNameDuplicate: 'Esiste già un progetto con questo nome',
+    projectCreated: 'Progetto creato',
+    projectSaveError: 'Impossibile salvare il progetto. Riprova.',
     deleteProject: 'Elimina progetto',
     deleteProjectHint:
       "Il progetto sparisce dall'app. I file e la cartella già salvati restano dove sono.",
@@ -249,6 +253,10 @@ const strings = {
     projectsHint:
       'With "Default destination" or "On the phone" the project becomes a subfolder named after it. With "Folder or cloud…" files go straight into the folder you choose. Tap a project to change its location.',
     projectNameInvalid: 'Choose a name that is not empty or already used',
+    projectNameEmpty: 'Type a name for the project',
+    projectNameDuplicate: 'A project with this name already exists',
+    projectCreated: 'Project created',
+    projectSaveError: 'The project could not be saved. Try again.',
     deleteProject: 'Delete project',
     deleteProjectHint:
       'The project disappears from the app. Files and the folder already saved stay where they are.',

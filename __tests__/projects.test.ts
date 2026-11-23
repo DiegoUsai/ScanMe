@@ -5,6 +5,7 @@ jest.mock('react-native-blob-util', () => ({
 import {
   createProject,
   projectFolderName,
+  projectNameError,
   resolveDestination,
 } from '../src/settings/projects';
 import {parseSettings} from '../src/settings/settings';
@@ -23,6 +24,13 @@ describe('projects', () => {
     const existing = [{id: '1', name: 'Casa'}];
     expect(createProject('   ', existing)).toBeUndefined();
     expect(createProject('casa', existing)).toBeUndefined();
+  });
+
+  it('explains why a name is refused', () => {
+    const existing = [{id: '1', name: 'Casa'}];
+    expect(projectNameError('  ', existing)).toBe('empty');
+    expect(projectNameError(' CASA ', existing)).toBe('duplicate');
+    expect(projectNameError('Ufficio', existing)).toBeUndefined();
   });
 
   it('uses a safe folder name', () => {
