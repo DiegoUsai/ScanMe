@@ -128,7 +128,7 @@ const strings = {
     saveAsNewFile: 'Nuovo file',
     replaceOriginal: 'Sostituisci originale',
     replaceOriginalConfirm:
-      'Il file originale verrà sovrascritto e non sarà possibile recuperarlo. Continuare?',
+      'Il file originale verrà sovrascritto e non sarà possibile recuperarlo. Campi modulo, segnalibri, allegati e firme digitali del PDF originale non vengono conservati. Continuare?',
     replace: 'Sostituisci',
     editedSuffix: 'modificato',
     originalFile: 'File originale',
@@ -275,7 +275,7 @@ const strings = {
     saveAsNewFile: 'New file',
     replaceOriginal: 'Replace original',
     replaceOriginalConfirm:
-      'The original file will be overwritten and cannot be recovered. Continue?',
+      'The original file will be overwritten and cannot be recovered. Form fields, bookmarks, attachments and digital signatures of the original PDF are not kept. Continue?',
     replace: 'Replace',
     editedSuffix: 'edited',
     originalFile: 'Original file',
