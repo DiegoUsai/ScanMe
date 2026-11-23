@@ -1,0 +1,89 @@
+name: Build APK Android
+
+# Avvio manuale da GitHub > Actions > "Build APK Android" > Run workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      architetture:
+        description: "ABI da includere (es. arm64-v8a per i telefoni moderni, oppure tutte)"
+        required: false
+        default: "armeabi-v7a,arm64-v8a,x86,x86_64"
+  # Collaudo automatico solo quando cambia questo file.
+  pull_request:
+    paths:
+      - .github/workflows/android-apk.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      SCANME_UPLOAD_STORE_PASSWORD: ${{ secrets.SCANME_UPLOAD_STORE_PASSWORD }}
+      SCANME_UPLOAD_KEY_ALIAS: ${{ secrets.SCANME_UPLOAD_KEY_ALIAS }}
+      SCANME_UPLOAD_KEY_PASSWORD: ${{ secrets.SCANME_UPLOAD_KEY_PASSWORD }}
+      HAS_RELEASE_KEY: ${{ secrets.SCANME_UPLOAD_KEYSTORE_BASE64 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Installa dipendenze JS
+        run: npm ci
+
+      - name: Prepara la chiave di firma release (se configurata)
+        if: env.HAS_RELEASE_KEY == 'true'
+        env:
+          KEYSTORE_B64: ${{ secrets.SCANME_UPLOAD_KEYSTORE_BASE64 }}
+        run: |
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.keystore"
+          echo "SCANME_UPLOAD_STORE_FILE=$RUNNER_TEMP/upload.keystore" >> "$GITHUB_ENV"
+
+      - name: Compila APK release
+        working-directory: android
+        run: ./gradlew --no-daemon assembleRelease -PreactNativeArchitectures="${{ inputs.architetture || 'armeabi-v7a,arm64-v8a,x86,x86_64' }}"
+
+      - name: Firma APK di prova (solo se manca la chiave release)
+        if: env.HAS_RELEASE_KEY != 'true'
+        run: |
+          # Senza i secret SCANME_UPLOAD_* la release esce non firmata e Android
+          # rifiuta di installarla. La firmiamo con la debug.keystore del repo:
+          # va bene per provarla sul proprio telefono, NON per distribuirla.
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          IN=$(ls android/app/build/outputs/apk/release/*-unsigned.apk | head -1)
+          "$BT/zipalign" -f -p 4 "$IN" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" sign --ks android/app/debug.keystore --ks-pass pass:android \
+            --ks-key-alias androiddebugkey --key-pass pass:android \
+            --out android/app/build/outputs/apk/release/app-release-test.apk "$RUNNER_TEMP/aligned.apk"
+          rm "$IN"
+
+      - name: Rinomina APK
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          if [ "$HAS_RELEASE_KEY" = "true" ]; then SUFFIX=release; else SUFFIX=test-non-distribuire; fi
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/*.apk "dist/ScanMe-$SHA-$SUFFIX.apk"
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ScanMe-apk-${{ github.run_number }}
+          path: dist/*.apk
+          retention-days: 30
+          if-no-files-found: error
