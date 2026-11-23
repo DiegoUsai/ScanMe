@@ -40,6 +40,7 @@ import {
 } from '../native/StorageAccess';
 import {saveToDevice, sanitizeFileName, cleanTempFiles} from '../utils/files';
 import {addRecent} from '../recents/recents';
+import {releaseFileIfUnused} from '../settings/grants';
 import type {RootStackParamList} from '../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EditPdf'>;
@@ -74,6 +75,17 @@ export default function EditPdfScreen({route, navigation}: Props) {
       cleanTempFiles(files);
     };
   }, [pdf.cachePath]);
+
+  // Aprendo il PDF si prende un permesso persistente sul file. Android ne
+  // tiene un numero limitato e, oltre il limite, scarta i più vecchi: di
+  // solito quello sulla cartella di destinazione. Uscendo lo si rilascia, a
+  // meno che il file sia negli ultimi file (serve per riaprirlo da lì).
+  useEffect(
+    () => () => {
+      releaseFileIfUnused(pdf.uri);
+    },
+    [pdf.uri],
+  );
 
   // Uscendo con modifiche non salvate si chiede conferma.
   useEffect(

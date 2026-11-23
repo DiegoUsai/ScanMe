@@ -236,22 +236,56 @@ class PdfEditorModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    /** Sovrascrive il PDF originale con `path`. Va chiamato solo dopo conferma dell'utente. */
+    /**
+     * Sovrascrive il PDF originale con `path`. Va chiamato solo dopo conferma
+     * dell'utente.
+     *
+     * La scrittura tronca l'originale prima di copiare il nuovo contenuto: se
+     * la copia si interrompe (rete assente con un cloud, app chiusa) il file
+     * resterebbe vuoto o a metà. Per questo prima se ne fa una copia nella
+     * cache e, in caso di errore, la si riscrive sull'originale.
+     */
     @ReactMethod
     fun overwrite(uriString: String, path: String, promise: Promise) {
+        val resolver = reactApplicationContext.contentResolver
+        val uri = Uri.parse(uriString)
+        val backup = File(
+            File(reactApplicationContext.cacheDir, "pdf-edit").apply { mkdirs() },
+            "backup-${System.currentTimeMillis()}.pdf"
+        )
         try {
-            val resolver = reactApplicationContext.contentResolver
-            // "wt" tronca il file: senza, un PDF più corto lascerebbe in coda
-            // byte del vecchio file e risulterebbe corrotto.
-            val output = resolver.openOutputStream(Uri.parse(uriString), "wt")
-                ?: throw IllegalStateException("Cannot open original")
-            output.use { out -> FileInputStream(File(path)).use { it.copyTo(out) } }
+            resolver.openInputStream(uri)?.use { input ->
+                FileOutputStream(backup).use { input.copyTo(it) }
+            } ?: throw IllegalStateException("Cannot back up original")
+            try {
+                writeFrom(uri, File(path))
+            } catch (e: Exception) {
+                try {
+                    writeFrom(uri, backup)
+                } catch (restoreError: Exception) {
+                    // Originale non ripristinabile: l'utente ha ancora il PDF
+                    // modificato nella cache e può salvarlo come nuovo file.
+                    e.addSuppressed(restoreError)
+                }
+                throw e
+            }
             promise.resolve(uriString)
         } catch (e: SecurityException) {
             promise.reject("PERMISSION_DENIED", e.message ?: "Original is read-only")
         } catch (e: Exception) {
             promise.reject("OVERWRITE_ERROR", e.message ?: "Cannot overwrite original")
+        } finally {
+            backup.delete()
         }
+    }
+
+    /** Sostituisce il contenuto di `uri` con quello di `source`. */
+    private fun writeFrom(uri: Uri, source: File) {
+        // "wt" tronca il file: senza, un PDF più corto lascerebbe in coda
+        // byte del vecchio file e risulterebbe corrotto.
+        val output = reactApplicationContext.contentResolver.openOutputStream(uri, "wt")
+            ?: throw IllegalStateException("Cannot open original")
+        output.use { out -> FileInputStream(source).use { it.copyTo(out) } }
     }
 
     private fun canWrite(uri: Uri): Boolean = try {

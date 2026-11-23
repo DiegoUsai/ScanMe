@@ -33,14 +33,15 @@ import type {OutputFormat} from '../settings/settings';
 import {
   pickFolder,
   hasAccess,
-  releaseAccess,
   saveToFolder,
+  deleteSavedFile,
   describeFolder,
   StorageErrorCode,
 } from '../native/StorageAccess';
 import type {FolderDestination} from '../native/StorageAccess';
 import {getErrorCode} from '../native/DocumentScanner';
 import {addRecent} from '../recents/recents';
+import {releaseFolderIfUnused} from '../settings/grants';
 import {
   findProject,
   projectFolderName,
@@ -92,17 +93,20 @@ export default function PreviewScreen({route, navigation}: Props) {
   const savingRef = useRef(false);
   // Cartella scelta solo per questo salvataggio: il suo permesso persistente
   // va rilasciato all'uscita, altrimenti si accumulano (Android ne tiene al
-  // massimo 512 per app).
+  // massimo 512 per app). Android però tiene un solo permesso per cartella:
+  // si rilascia solo se nessun progetto, la predefinita o un file salvato
+  // la usa ancora, altrimenti anche loro perderebbero l'accesso.
   const oneOffFolder = useRef<string | undefined>(undefined);
-  const defaultFolderUri = settings.destination?.uri;
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   useEffect(
     () => () => {
       const uri = oneOffFolder.current;
-      if (uri && uri !== defaultFolderUri) {
-        releaseAccess(uri);
+      if (uri) {
+        releaseFolderIfUnused(uri, settingsRef.current);
       }
     },
-    [defaultFolderUri],
+    [],
   );
   // Copie create in cache per la condivisione, da eliminare all'uscita.
   const shareCopies = useRef<string[]>([]);
@@ -161,50 +165,65 @@ export default function PreviewScreen({route, navigation}: Props) {
       const target = project
         ? resolveDestination(project, settings.destination)
         : destination;
-      if (format === 'gallery') {
-        const uris: string[] = [];
-        for (let i = 0; i < pages.length; i++) {
-          uris.push(
-            await saveToGallery(
-              pages[i],
-              pageFileName(baseName, i, pages.length),
-              gallerySub,
-            ),
-          );
-        }
-        savedUri = uris[0];
-        allUris = uris;
-        where = t('galleryFolder');
-        if (gallerySub) {
-          where = `${where} › ${gallerySub}`;
-        }
-      } else {
-        if (target && !(await hasAccess(target.uri))) {
-          throw Object.assign(new Error('Folder access lost'), {
-            code: StorageErrorCode.PermissionDenied,
-          });
-        }
-        // Salva un file nella cartella scelta (SAF) o, senza cartella, in Download/ScanMe.
-        const write = (source: string, name: string, mime: string) =>
-          target
-            ? saveToFolder(target, subFolders, name, mime, source)
-            : saveToDevice(source, name, mime, subFolders[0]);
-        where = [
-          target ? describeFolder(target) : t('downloadFolder'),
-          ...subFolders,
-        ].join(' › ');
-        if (format === 'pdf' && pdfUri) {
-          mimeType = 'application/pdf';
-          savedUri = await write(pdfUri, `${baseName}.pdf`, mimeType);
-        } else {
+      // File già scritti: se uno successivo fallisce si cancellano, così un
+      // nuovo tentativo non lascia pagine duplicate nella destinazione.
+      const created: string[] = [];
+      const track = async (pending: Promise<string>) => {
+        const uri = await pending;
+        created.push(uri);
+        return uri;
+      };
+      try {
+        if (format === 'gallery') {
           const uris: string[] = [];
           for (let i = 0; i < pages.length; i++) {
-            const name = pageFileName(baseName, i, pages.length);
-            uris.push(await write(pages[i], `${name}.jpg`, mimeType));
+            uris.push(
+              await track(
+                saveToGallery(
+                  pages[i],
+                  pageFileName(baseName, i, pages.length),
+                  gallerySub,
+                ),
+              ),
+            );
           }
           savedUri = uris[0];
           allUris = uris;
+          where = t('galleryFolder');
+          if (gallerySub) {
+            where = `${where} › ${gallerySub}`;
+          }
+        } else {
+          if (target && !(await hasAccess(target.uri))) {
+            throw Object.assign(new Error('Folder access lost'), {
+              code: StorageErrorCode.PermissionDenied,
+            });
+          }
+          // Salva un file nella cartella scelta (SAF) o, senza cartella, in Download/ScanMe.
+          const write = (source: string, name: string, mime: string) =>
+            target
+              ? saveToFolder(target, subFolders, name, mime, source)
+              : saveToDevice(source, name, mime, subFolders[0]);
+          where = [
+            target ? describeFolder(target) : t('downloadFolder'),
+            ...subFolders,
+          ].join(' › ');
+          if (format === 'pdf' && pdfUri) {
+            mimeType = 'application/pdf';
+            savedUri = await track(write(pdfUri, `${baseName}.pdf`, mimeType));
+          } else {
+            const uris: string[] = [];
+            for (let i = 0; i < pages.length; i++) {
+              const name = pageFileName(baseName, i, pages.length);
+              uris.push(await track(write(pages[i], `${name}.jpg`, mimeType)));
+            }
+            savedUri = uris[0];
+            allUris = uris;
+          }
         }
+      } catch (error) {
+        await Promise.all(created.map(deleteSavedFile));
+        throw error;
       }
       // Il file salvato sta nella cartella scelta qui: il permesso va tenuto,
       // altrimenti non si potrebbe più aprirlo dagli ultimi file.
@@ -251,12 +270,8 @@ export default function PreviewScreen({route, navigation}: Props) {
           try {
             const folder = await pickFolder();
             const previous = oneOffFolder.current;
-            if (
-              previous &&
-              previous !== folder.uri &&
-              previous !== defaultFolderUri
-            ) {
-              releaseAccess(previous);
+            if (previous && previous !== folder.uri) {
+              releaseFolderIfUnused(previous, settingsRef.current);
             }
             oneOffFolder.current = folder.uri;
             setDestination(folder);
@@ -268,7 +283,7 @@ export default function PreviewScreen({route, navigation}: Props) {
         },
       },
     ]);
-  }, [defaultFolderUri]);
+  }, []);
 
   /**
    * Condivide il documento nel formato scelto senza salvarlo sul telefono:
