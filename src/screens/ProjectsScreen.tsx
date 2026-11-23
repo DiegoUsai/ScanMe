@@ -1,4 +1,4 @@
-import React, {useCallback, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,19 @@ import {
   FlatList,
   Alert,
   ActivityIndicator,
+  Keyboard,
+  Platform,
+  ToastAndroid,
 } from 'react-native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import type {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {t} from '../i18n';
 import {useSettings} from '../settings/SettingsContext';
-import {createProject, sameLocation} from '../settings/projects';
+import {
+  createProject,
+  projectNameError,
+  sameLocation,
+} from '../settings/projects';
 import type {Project, Settings} from '../settings/settings';
 import type {FolderDestination} from '../native/StorageAccess';
 import {loadRecents, updateRecent} from '../recents/recents';
@@ -29,6 +36,18 @@ import {getErrorCode} from '../native/DocumentScanner';
 import type {RootStackParamList} from '../App';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Projects'>;
+
+/** Per quanto resta evidenziato un progetto appena creato. */
+const HIGHLIGHT_MS = 2500;
+
+/** Messaggio breve di conferma (toast su Android). */
+function notify(message: string) {
+  if (Platform.OS === 'android') {
+    ToastAndroid.show(message, ToastAndroid.SHORT);
+  } else {
+    Alert.alert(message);
+  }
+}
 
 /** Dove salvare i file di un progetto. */
 type Location =
@@ -61,6 +80,18 @@ export default function ProjectsScreen({navigation}: Props) {
   const [newLocation, setNewLocation] = useState<Location>({kind: 'default'});
   const [sheet, setSheet] = useState<Project | null>(null);
   const [moving, setMoving] = useState(false);
+  const [adding, setAdding] = useState(false);
+  /** Progetto appena creato, evidenziato per qualche secondo. */
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  const listRef = useRef<FlatList<Project>>(null);
+
+  useEffect(() => {
+    if (!highlightId) {
+      return;
+    }
+    const timer = setTimeout(() => setHighlightId(null), HIGHLIGHT_MS);
+    return () => clearTimeout(timer);
+  }, [highlightId]);
 
   const saveProjects = useCallback(
     (projects: Project[]) => update({projects}),
@@ -82,18 +113,42 @@ export default function ProjectsScreen({navigation}: Props) {
   }, []);
 
   const handleAdd = useCallback(async () => {
-    const project = createProject(newName, settings.projects);
-    if (!project) {
-      Alert.alert(t('projectNameInvalid'));
+    if (adding) {
       return;
     }
-    await saveProjects([
-      ...settings.projects,
-      withLocation(project, newLocation),
-    ]);
+    const nameError = projectNameError(newName, settings.projects);
+    const project = nameError
+      ? undefined
+      : createProject(newName, settings.projects);
+    if (!project) {
+      Alert.alert(
+        nameError === 'duplicate'
+          ? t('projectNameDuplicate')
+          : t('projectNameEmpty'),
+      );
+      return;
+    }
+    setAdding(true);
+    try {
+      await saveProjects([
+        ...settings.projects,
+        withLocation(project, newLocation),
+      ]);
+    } catch {
+      // Il nome resta nel campo: l'utente può riprovare senza riscriverlo.
+      Alert.alert(t('error'), t('projectSaveError'));
+      return;
+    } finally {
+      setAdding(false);
+    }
     setNewName('');
     setNewLocation({kind: 'default'});
-  }, [newName, newLocation, settings.projects, saveProjects]);
+    Keyboard.dismiss();
+    setHighlightId(project.id);
+    notify(`${t('projectCreated')}: ${project.name}`);
+    // Il nuovo progetto è in fondo alla lista: lo porta in vista.
+    setTimeout(() => listRef.current?.scrollToEnd({animated: true}), 100);
+  }, [adding, newName, newLocation, settings.projects, saveProjects]);
 
   const chooseNewFolder = useCallback(async () => {
     const folder = await askFolder();
@@ -242,10 +297,19 @@ export default function ProjectsScreen({navigation}: Props) {
           onSubmitEditing={handleAdd}
         />
         <TouchableOpacity
-          style={styles.addButton}
+          style={[
+            styles.addButton,
+            (adding || newName.trim() === '') && styles.addButtonDisabled,
+          ]}
           onPress={handleAdd}
-          accessibilityRole="button">
-          <Text style={styles.addButtonText}>{t('add')}</Text>
+          disabled={adding}
+          accessibilityRole="button"
+          accessibilityState={{disabled: adding || newName.trim() === ''}}>
+          {adding ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.addButtonText}>{t('add')}</Text>
+          )}
         </TouchableOpacity>
       </View>
       <Text style={styles.locationLabel}>{t('projectLocation')}</Text>
@@ -278,12 +342,13 @@ export default function ProjectsScreen({navigation}: Props) {
       <Text style={styles.hint}>{t('folderPickerHint')}</Text>
 
       <FlatList
+        ref={listRef}
         data={settings.projects}
         keyExtractor={p => p.id}
         contentContainerStyle={styles.list}
         ListEmptyComponent={<Text style={styles.empty}>{t('noProjects')}</Text>}
         renderItem={({item}) => (
-          <View style={styles.row}>
+          <View style={[styles.row, item.id === highlightId && styles.rowNew]}>
             <TouchableOpacity
               style={styles.rowText}
               onPress={() => setSheet(item)}
@@ -355,6 +420,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     justifyContent: 'center',
   },
+  addButtonDisabled: {opacity: 0.5},
   addButtonText: {color: '#fff', fontWeight: '600'},
   locationLabel: {
     fontSize: 12,
@@ -402,6 +468,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: '#eee',
   },
+  rowNew: {backgroundColor: '#dbeafe'},
   rowText: {flex: 1},
   rowName: {fontSize: 16, color: '#1a1a1a', fontWeight: '500'},
   rowMeta: {fontSize: 12, color: '#888', marginTop: 2},
